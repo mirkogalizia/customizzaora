@@ -133,14 +133,22 @@ export default function ProductDetailPage() {
               </button>
             </div>
 
-            {/* Canvas con Mockup */}
+            {/* Canvas con Mockup - FIX RESPONSIVE */}
             {selectedColor && currentMockup ? (
-              <div className="sticky top-24">
-                <CanvasEditor
-                  mockupUrl={currentMockup}
-                  side={currentSide}
-                  productName={product.name}
-                />
+              <div className="lg:sticky lg:top-24">
+                {/* Container con aspect ratio fisso */}
+                <div className="w-full max-w-full mx-auto">
+                  <div className="relative w-full" style={{ paddingTop: '120%' }}>
+                    {/* Aspect ratio 5:6 (600x700) */}
+                    <div className="absolute inset-0">
+                      <CanvasEditor
+                        mockupUrl={currentMockup}
+                        side={currentSide}
+                        productName={product.name}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
