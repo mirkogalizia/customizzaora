@@ -11,7 +11,7 @@ interface CanvasEditorProps {
   printArea?: PrintAreaDimensions;
 }
 
-const CANVAS_SIZE = 500;
+const ORIGINAL_CANVAS_SIZE = 500; // Dimensione di riferimento
 const designStorage: { [key: string]: any } = {};
 
 export function CanvasEditor({ mockupUrl, side, productName, printArea }: CanvasEditorProps) {
@@ -21,8 +21,46 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
   const imgRef = useRef<HTMLImageElement>(null);
   const [isReady, setIsReady] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [canvasSize, setCanvasSize] = useState(ORIGINAL_CANVAS_SIZE);
+  const [scale, setScale] = useState(1);
   const storageKey = `design-${side}`;
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Calcola dimensioni responsive
+  useEffect(() => {
+    const calculateSize = () => {
+      if (!containerRef.current) return;
+      
+      const container = containerRef.current;
+      const containerWidth = container.offsetWidth;
+      
+      // Su mobile usa la larghezza del container, su desktop usa il massimo
+      const isMobile = window.innerWidth < 768;
+      const maxSize = isMobile ? containerWidth : Math.min(containerWidth, ORIGINAL_CANVAS_SIZE);
+      
+      const newScale = maxSize / ORIGINAL_CANVAS_SIZE;
+      
+      setCanvasSize(maxSize);
+      setScale(newScale);
+    };
+
+    calculateSize();
+    
+    const handleResize = () => {
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      resizeTimeoutRef.current = setTimeout(calculateSize, 150);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Calcola bounding box dell'immagine
   const getImageBounds = () => {
@@ -30,19 +68,19 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
     
     const img = imgRef.current;
     const imgNaturalRatio = img.naturalWidth / img.naturalHeight;
-    const canvasRatio = CANVAS_SIZE / CANVAS_SIZE;
+    const canvasRatio = 1; // Il canvas è quadrato
     
     let imgWidth, imgHeight, imgX, imgY;
     
     if (imgNaturalRatio > canvasRatio) {
-      imgWidth = CANVAS_SIZE;
-      imgHeight = CANVAS_SIZE / imgNaturalRatio;
+      imgWidth = ORIGINAL_CANVAS_SIZE;
+      imgHeight = ORIGINAL_CANVAS_SIZE / imgNaturalRatio;
       imgX = 0;
-      imgY = (CANVAS_SIZE - imgHeight) / 2;
+      imgY = (ORIGINAL_CANVAS_SIZE - imgHeight) / 2;
     } else {
-      imgHeight = CANVAS_SIZE;
-      imgWidth = CANVAS_SIZE * imgNaturalRatio;
-      imgX = (CANVAS_SIZE - imgWidth) / 2;
+      imgHeight = ORIGINAL_CANVAS_SIZE;
+      imgWidth = ORIGINAL_CANVAS_SIZE * imgNaturalRatio;
+      imgX = (ORIGINAL_CANVAS_SIZE - imgWidth) / 2;
       imgY = 0;
     }
     
@@ -50,16 +88,13 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
   };
 
   useEffect(() => {
-    if (!canvasRef.current || !containerRef.current || !imgLoaded) return;
+    if (!canvasRef.current || !containerRef.current || !imgLoaded || canvasSize === 0) return;
 
     const initCanvas = () => {
       const imgBounds = getImageBounds();
       if (!imgBounds) return;
 
-      console.log('🎨 Frontend CanvasEditor - Image bounds:', imgBounds);
-      console.log('📍 Print Area:', printArea);
-
-      // Converti percentuali in coordinate assolute
+      // Converti percentuali in coordinate assolute (su dimensione originale)
       const xPercent = printArea?.xPercent || 35;
       const yPercent = printArea?.yPercent || 30;
       const widthPercent = printArea?.widthPercent || 30;
@@ -70,17 +105,11 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       const printWidth = imgBounds.width * widthPercent / 100;
       const printHeight = imgBounds.height * heightPercent / 100;
 
-      console.log('📐 Frontend - Calculated area (NO ZOOM):', { 
-        printX, 
-        printY, 
-        printWidth, 
-        printHeight,
-        canvasSize: CANVAS_SIZE
-      });
-
+      // Crea canvas con dimensione ORIGINALE (500x500)
+      // Fabric.js lavora sempre su questa dimensione, poi lo scaliamo visivamente con CSS
       const canvas = new fabric.Canvas(canvasRef.current!, {
-        width: CANVAS_SIZE,
-        height: CANVAS_SIZE,
+        width: ORIGINAL_CANVAS_SIZE,
+        height: ORIGINAL_CANVAS_SIZE,
         backgroundColor: 'transparent',
         preserveObjectStacking: true,
         selection: true,
@@ -89,6 +118,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
 
       fabricCanvasRef.current = canvas;
 
+      // ClipPath per area di stampa
       const clipPath = new fabric.Rect({
         left: printX,
         top: printY,
@@ -98,6 +128,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       });
       canvas.clipPath = clipPath;
 
+      // Rettangolo visivo area di stampa
       const printAreaRect = new fabric.Rect({
         left: printX,
         top: printY,
@@ -118,7 +149,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
 
       setupCustomControls(canvas);
 
-      // CONSTRAINT MIGLIORATI: mantieni almeno 30% visibile
+      // CONSTRAINT: mantieni almeno 30% visibile
       const constrainToArea = (obj: fabric.Object) => {
         if (!obj || (obj as any).name === 'printArea') return;
 
@@ -126,18 +157,15 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
         let left = obj.left || 0;
         let top = obj.top || 0;
 
-        // Assicura che almeno il 30% dell'oggetto rimanga nell'area
         const minVisible = 0.3;
         const minVisibleWidth = bound.width * minVisible;
         const minVisibleHeight = bound.height * minVisible;
 
-        // Limiti con margine di visibilità
         const maxLeft = printX + printWidth - minVisibleWidth;
         const maxTop = printY + printHeight - minVisibleHeight;
         const minLeft = printX - bound.width + minVisibleWidth;
         const minTop = printY - bound.height + minVisibleHeight;
 
-        // Calcola la nuova posizione
         if (bound.left < minLeft) {
           left = minLeft + (obj.left! - bound.left);
         }
@@ -172,20 +200,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       loadState(canvas);
       setIsReady(true);
 
-      const handleResize = () => {
-        if (resizeTimeoutRef.current) {
-          clearTimeout(resizeTimeoutRef.current);
-        }
-        resizeTimeoutRef.current = setTimeout(() => {
-          // Nessun resize necessario, il CSS gestisce tutto
-          canvas.calcOffset();
-          canvas.requestRenderAll();
-        }, 100);
-      };
-
-      window.addEventListener('resize', handleResize);
-      handleResize();
-
       const handleReset = () => {
         canvas.clear();
         canvas.clipPath = clipPath;
@@ -197,11 +211,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       window.addEventListener('resetCanvas', handleReset);
 
       return () => {
-        if (resizeTimeoutRef.current) {
-          clearTimeout(resizeTimeoutRef.current);
-        }
         clearTimeout(saveTimeout);
-        window.removeEventListener('resize', handleResize);
         window.removeEventListener('resetCanvas', handleReset);
         canvas.dispose();
       };
@@ -209,7 +219,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
 
     const timeoutId = setTimeout(initCanvas, 100);
     return () => clearTimeout(timeoutId);
-  }, [side, printArea, imgLoaded]);
+  }, [side, printArea, imgLoaded, canvasSize]);
 
   const saveState = (canvas: fabric.Canvas) => {
     try {
@@ -257,7 +267,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <div className="relative aspect-square bg-white rounded-xl shadow-lg overflow-hidden border-2 border-gray-100">
+      <div className="relative w-full aspect-square bg-white rounded-xl shadow-lg overflow-hidden border-2 border-gray-100">
         {/* MOCKUP - carica per calcolare bounds */}
         <img
           ref={imgRef}
@@ -269,17 +279,16 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
           onLoad={() => setImgLoaded(true)}
         />
         
+        {/* Canvas Container - scala visivamente con CSS */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div 
             className="relative touch-none"
             style={{ 
-              width: '100%', 
-              height: '100%',
-              maxWidth: '500px',
-              maxHeight: '500px',
+              width: `${canvasSize}px`, 
+              height: `${canvasSize}px`,
             }}
           >
-            <canvas 
+            anvas 
               ref={canvasRef}
               style={{ 
                 width: '100%', 
@@ -290,12 +299,12 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
           </div>
         </div>
 
-        <div className="absolute top-4 right-4 bg-gradient-to-r from-orange-600 to-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg pointer-events-none">
+        <div className="absolute top-4 right-4 bg-gradient-to-r from-orange-600 to-orange-500 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-lg pointer-events-none">
           {side === 'front' ? '👕 Fronte' : '🔙 Retro'}
         </div>
 
         {printArea && (
-          <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-2 rounded-lg text-xs font-medium text-gray-700 shadow-md pointer-events-none">
+          <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm px-2 py-1.5 md:px-3 md:py-2 rounded-lg text-xs font-medium text-gray-700 shadow-md pointer-events-none">
             File stampa: {printArea.widthCm} × {printArea.heightCm} cm
           </div>
         )}
