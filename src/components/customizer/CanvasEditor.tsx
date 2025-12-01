@@ -22,8 +22,10 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
   const [isReady, setIsReady] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [canvasSize, setCanvasSize] = useState(ORIGINAL_CANVAS_SIZE);
-  const storageKey = `design-${side}`;
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Storage key unico per ogni lato
+  const storageKey = `design-${side}`;
 
   useEffect(() => {
     const calculateSize = () => {
@@ -77,8 +79,54 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
     return { x: imgX, y: imgY, width: imgWidth, height: imgHeight };
   };
 
+  // SALVA stato del lato corrente prima di cambiare
+  const saveCurrentState = (canvas: fabric.Canvas) => {
+    try {
+      const objects = canvas.getObjects().filter(obj => (obj as any).name !== 'printArea');
+      if (objects.length > 0) {
+        const state = canvas.toJSON(['name']);
+        designStorage[storageKey] = state;
+        console.log(`💾 Salvato design per ${side}:`, objects.length, 'oggetti');
+      } else {
+        // Se non ci sono oggetti, rimuovi il salvataggio
+        delete designStorage[storageKey];
+        console.log(`🗑️ Rimosso salvataggio vuoto per ${side}`);
+      }
+    } catch (error) {
+      console.error('Error saving state:', error);
+    }
+  };
+
+  // CARICA stato del lato corrente
+  const loadSavedState = (canvas: fabric.Canvas) => {
+    const savedState = designStorage[storageKey];
+    if (savedState) {
+      try {
+        console.log(`📂 Caricamento design per ${side}...`);
+        canvas.loadFromJSON(savedState, () => {
+          // Ripristina il print area rect dopo il caricamento
+          const printAreaRect = canvas.getObjects().find(obj => (obj as any).name === 'printArea');
+          if (printAreaRect) {
+            canvas.sendToBack(printAreaRect);
+          }
+          canvas.requestRenderAll();
+          console.log(`✅ Design ${side} caricato!`);
+        });
+      } catch (error) {
+        console.error('Error loading state:', error);
+      }
+    } else {
+      console.log(`📭 Nessun design salvato per ${side}`);
+    }
+  };
+
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current || !imgLoaded || canvasSize === 0) return;
+
+    // SALVA lo stato del lato precedente prima di reinizializzare
+    if (fabricCanvasRef.current) {
+      saveCurrentState(fabricCanvasRef.current);
+    }
 
     const initCanvas = () => {
       const imgBounds = getImageBounds();
@@ -94,6 +142,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       const printWidth = imgBounds.width * widthPercent / 100;
       const printHeight = imgBounds.height * heightPercent / 100;
 
+      // CREA NUOVO CANVAS
       const canvas = new fabric.Canvas(canvasRef.current!, {
         width: ORIGINAL_CANVAS_SIZE,
         height: ORIGINAL_CANVAS_SIZE,
@@ -173,33 +222,19 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       canvas.on('object:scaling', (e) => constrainToArea(e.target as fabric.Object));
       canvas.on('object:rotating', (e) => constrainToArea(e.target as fabric.Object));
 
+      // Auto-save quando l'utente modifica
       let saveTimeout: NodeJS.Timeout;
       const debouncedSave = () => {
         clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-          try {
-            const objects = canvas.getObjects().filter(obj => (obj as any).name !== 'printArea');
-            if (objects.length > 0) {
-              designStorage[storageKey] = canvas.toJSON(['name']);
-            }
-          } catch (error) {
-            console.error('Error saving state:', error);
-          }
-        }, 300);
+        saveTimeout = setTimeout(() => saveCurrentState(canvas), 300);
       };
 
       canvas.on('object:modified', debouncedSave);
       canvas.on('object:added', debouncedSave);
       canvas.on('object:removed', debouncedSave);
 
-      const savedState = designStorage[storageKey];
-      if (savedState) {
-        try {
-          canvas.loadFromJSON(savedState, () => canvas.requestRenderAll());
-        } catch (error) {
-          console.error('Error loading state:', error);
-        }
-      }
+      // CARICA lo stato salvato per questo lato
+      loadSavedState(canvas);
 
       setIsReady(true);
 
@@ -208,21 +243,23 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
         canvas.clipPath = clipPath;
         canvas.add(printAreaRect);
         canvas.sendToBack(printAreaRect);
-        designStorage[storageKey] = null;
+        delete designStorage[storageKey];
         canvas.requestRenderAll();
+        console.log(`🔄 Reset design ${side}`);
       };
       window.addEventListener('resetCanvas', handleReset);
 
       return () => {
         clearTimeout(saveTimeout);
         window.removeEventListener('resetCanvas', handleReset);
+        saveCurrentState(canvas); // Salva prima di distruggere
         canvas.dispose();
       };
     };
 
     const timeoutId = setTimeout(initCanvas, 100);
     return () => clearTimeout(timeoutId);
-  }, [side, printArea, imgLoaded, canvasSize, storageKey]);
+  }, [side, printArea, imgLoaded, canvasSize]); // Nota: side è nelle dipendenze!
 
   useEffect(() => {
     if (fabricCanvasRef.current && isReady) {
