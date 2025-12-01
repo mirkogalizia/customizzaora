@@ -359,37 +359,58 @@ export default function HomePage() {
                 <span className="text-xl font-bold text-white">PrintShop</span>
               </div>
               <p className="text-sm text-gray-400">
-                Magliette personalizzate di qualità, consegnate in 24 ore.
+                Magliette personalizzate di qualità, consegnate in 24-48 ore.
+              </p>
+              <p className="text-sm text-gray-400 mt-4">
+                by JUST LEGIT LLC
               </p>
             </div>
+            
             <div>
               <h4 className="font-bold text-white mb-4">Prodotti</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link href="/products?category=tshirt" className="hover:text-orange-600">T-Shirt</Link></li>
-                <li><Link href="/products?category=hoodie" className="hover:text-orange-600">Felpe</Link></li>
-                <li><Link href="/products?category=sweatshirt" className="hover:text-orange-600">Sweatshirt</Link></li>
+                <li><Link href="/products?category=tshirt" className="hover:text-orange-600 transition-colors">T-Shirt</Link></li>
+                <li><Link href="/products?category=hoodie" className="hover:text-orange-600 transition-colors">Felpe</Link></li>
+                <li><Link href="/products?category=sweatshirt" className="hover:text-orange-600 transition-colors">Sweatshirt</Link></li>
               </ul>
             </div>
+            
             <div>
               <h4 className="font-bold text-white mb-4">Supporto</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link href="/how-it-works" className="hover:text-orange-600">Come Funziona</Link></li>
-                <li><Link href="/faq" className="hover:text-orange-600">FAQ</Link></li>
-                <li><Link href="/contact" className="hover:text-orange-600">Contatti</Link></li>
-                <li><Link href="/shipping" className="hover:text-orange-600">Spedizioni</Link></li>
+                <li><Link href="/how-it-works" className="hover:text-orange-600 transition-colors">Come Funziona</Link></li>
+                <li><Link href="/faq" className="hover:text-orange-600 transition-colors">FAQ</Link></li>
+                <li><Link href="/contact" className="hover:text-orange-600 transition-colors">Contatti</Link></li>
+                <li><Link href="/shipping" className="hover:text-orange-600 transition-colors">Spedizioni</Link></li>
               </ul>
             </div>
+            
             <div>
-              <h4 className="font-bold text-white mb-4">Contatti</h4>
+              <h4 className="font-bold text-white mb-4">Legale</h4>
               <ul className="space-y-2 text-sm">
-                <li>📧 info@printshop.it</li>
-                <li>📱 WhatsApp: +39 333 1234567</li>
+                <li><Link href="/privacy-policy" className="hover:text-orange-600 transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/terms-and-conditions" className="hover:text-orange-600 transition-colors">Termini e Condizioni</Link></li>
+                <li><Link href="/cookie-policy" className="hover:text-orange-600 transition-colors">Cookie Policy</Link></li>
+              </ul>
+              <h4 className="font-bold text-white mb-4 mt-6">Contatti</h4>
+              <ul className="space-y-2 text-sm">
+                <li>📧 <a href="mailto:assistenza@customizzaora.it" className="hover:text-orange-600 transition-colors">assistenza@customizzaora.it</a></li>
                 <li>🕐 Lun-Ven 9:00-18:00</li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 pt-8 text-sm text-center text-gray-400">
-            <p>© 2025 PrintShop. Tutti i diritti riservati. P.IVA 12345678901</p>
+          
+          <div className="border-t border-gray-800 pt-8">
+            <div className="text-sm text-center text-gray-400">
+              <p className="mb-3">© 2025 PrintShop by JUST LEGIT LLC. Tutti i diritti riservati.</p>
+              <div className="flex flex-wrap justify-center gap-2 md:gap-4">
+                <Link href="/privacy-policy" className="hover:text-orange-600 transition-colors">Privacy</Link>
+                <span className="hidden md:inline">|</span>
+                <Link href="/terms-and-conditions" className="hover:text-orange-600 transition-colors">Termini</Link>
+                <span className="hidden md:inline">|</span>
+                <Link href="/cookie-policy" className="hover:text-orange-600 transition-colors">Cookie</Link>
+              </div>
+            </div>
           </div>
         </div>
       </footer>
