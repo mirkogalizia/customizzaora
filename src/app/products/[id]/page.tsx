@@ -91,7 +91,7 @@ export default function ProductDetailPage() {
     const seen = new Set<string>();
     const result: string[] = [];
     for (const { node } of sp.variants.edges) {
-      const colorOpt = node.selectedOptions.find(o => o.name === 'Color');
+      const colorOpt = node.selectedOptions.find(o => o.name === 'Colore');
       if (colorOpt && !seen.has(colorOpt.value)) {
         seen.add(colorOpt.value);
         result.push(colorOpt.value);
@@ -104,10 +104,10 @@ export default function ProductDetailPage() {
   function getAvailableSizes(sp: ShopifyProduct, color: string): string[] {
     return sp.variants.edges
       .filter(({ node }) => {
-        const colorOpt = node.selectedOptions.find(o => o.name === 'Color');
+        const colorOpt = node.selectedOptions.find(o => o.name === 'Colore');
         return colorOpt?.value === color && node.availableForSale;
       })
-      .map(({ node }) => node.selectedOptions.find(o => o.name === 'Size')?.value ?? '')
+      .map(({ node }) => node.selectedOptions.find(o => o.name === 'Taglia')?.value ?? '')
       .filter(Boolean);
   }
 
