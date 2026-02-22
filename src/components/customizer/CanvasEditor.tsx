@@ -471,10 +471,15 @@ export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, pro
             </div>
           )}
 
-          {/* Tap to edit — overlay mobile */}
+          {/* Overlay mobile — intercetta il tap sopra Fabric.js e apre il fullscreen */}
           {isMobile && (
-            <div className="absolute inset-0 flex items-end justify-center pb-4 pointer-events-none">
-              <div className="bg-gray-900/80 backdrop-blur-sm text-white text-sm font-bold px-5 py-2.5 rounded-2xl flex items-center gap-2 shadow-lg">
+            <div
+              className="absolute inset-0 z-10 flex items-end justify-center pb-4"
+              style={{ touchAction: 'auto' }}
+              onTouchEnd={e => { e.preventDefault(); setFullscreen(true); }}
+              onClick={() => setFullscreen(true)}
+            >
+              <div className="bg-gray-900/80 backdrop-blur-sm text-white text-sm font-bold px-5 py-2.5 rounded-2xl flex items-center gap-2 shadow-lg pointer-events-none">
                 ✏️ Tocca per personalizzare
               </div>
             </div>
