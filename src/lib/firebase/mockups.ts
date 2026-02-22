@@ -1,11 +1,6 @@
-// src/lib/firebase/mockups.ts
-// Gestione mockup per prodotti Shopify su Firestore
-
-import { db, storage } from '@/lib/firebase/config'
-import {
-  doc, getDoc, setDoc, collection, getDocs
-} from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { db } from '@/lib/firebase/config'
+import { uploadFile } from '@/lib/firebase/storage'
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'
 
 export interface PrintArea {
   xPercent: number
@@ -17,29 +12,40 @@ export interface PrintArea {
 }
 
 export interface ColorMockup {
-  colorName: string      // "Black"
-  colorHex: string       // "#000000"
-  mockupFront: string    // URL Firebase Storage
-  mockupBack: string     // URL Firebase Storage
+  colorName: string
+  colorHex: string
+  mockupFront: string
+  mockupBack: string
   printArea: PrintArea
 }
 
 export interface ProductMockups {
   shopifyProductId: string
   shopifyHandle: string
-  colors: Record<string, ColorMockup> // key = colorName
+  colors: Record<string, ColorMockup>
   updatedAt: number
 }
 
-// Legge tutti i mockup di un prodotto
+// Usa uploadFile esistente in storage.ts — stesso pattern che funziona già nel progetto
+export async function uploadMockupImage(
+  shopifyProductId: string,
+  colorName: string,
+  side: 'front' | 'back',
+  file: File
+): Promise<string> {
+  const timestamp = Date.now()
+  const extension = file.name.split('.').pop() ?? 'png'
+  const safeName = colorName.toLowerCase().replace(/\s+/g, '-')
+  const path = `mockups/${shopifyProductId}/${safeName}-${side}-${timestamp}.${extension}`
+  return uploadFile(file, path)
+}
+
 export async function getProductMockups(shopifyProductId: string): Promise<ProductMockups | null> {
-  const docRef = doc(db, 'shopify_products', shopifyProductId)
-  const snap = await getDoc(docRef)
+  const snap = await getDoc(doc(db, 'shopify_products', shopifyProductId))
   if (!snap.exists()) return null
   return snap.data() as ProductMockups
 }
 
-// Salva i mockup di un colore specifico
 export async function saveColorMockup(
   shopifyProductId: string,
   shopifyHandle: string,
@@ -48,12 +54,9 @@ export async function saveColorMockup(
 ): Promise<void> {
   const docRef = doc(db, 'shopify_products', shopifyProductId)
   const snap = await getDoc(docRef)
-  const existing = snap.exists() ? snap.data() as ProductMockups : {
-    shopifyProductId,
-    shopifyHandle,
-    colors: {},
-    updatedAt: Date.now(),
-  }
+  const existing: ProductMockups = snap.exists()
+    ? snap.data() as ProductMockups
+    : { shopifyProductId, shopifyHandle, colors: {}, updatedAt: Date.now() }
 
   existing.colors[colorName] = {
     ...existing.colors[colorName],
@@ -65,22 +68,7 @@ export async function saveColorMockup(
   await setDoc(docRef, existing)
 }
 
-// Upload immagine mockup su Firebase Storage
-export async function uploadMockupImage(
-  shopifyProductId: string,
-  colorName: string,
-  side: 'front' | 'back',
-  file: File
-): Promise<string> {
-  const path = `mockups/${shopifyProductId}/${colorName}/${side}_${Date.now()}.${file.name.split('.').pop()}`
-  const storageRef = ref(storage, path)
-  await uploadBytes(storageRef, file)
-  return getDownloadURL(storageRef)
-}
-
-// Lista tutti i prodotti che hanno mockup configurati
 export async function getAllProductMockups(): Promise<ProductMockups[]> {
-  const col = collection(db, 'shopify_products')
-  const snap = await getDocs(col)
+  const snap = await getDocs(collection(db, 'shopify_products'))
   return snap.docs.map(d => d.data() as ProductMockups)
 }
