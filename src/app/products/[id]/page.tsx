@@ -5,8 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { getShopifyProduct, findVariantId, ShopifyProduct } from '@/lib/shopify/storefront';
 import { getProductMockups, ColorMockup, PrintAreas } from '@/lib/firebase/mockups';
 import { Button } from '@/components/ui/button';
-import { CanvasEditor } from '@/components/customizer/CanvasEditor';
-import { Configurator } from '@/components/customizer/Configurator';
 import Link from 'next/link';
 import { ArrowLeft, ShoppingCart, Loader2, Check, ChevronDown, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -92,8 +90,9 @@ export default function ProductDetailPage() {
   const currentMockup   = selectedColor ? mockups[selectedColor] : null;
   // ✅ FIX: usa printAreas dallo state, non da product._mockupData
   const currentPrintArea = printAreas?.[currentSide] ?? null;
-  const mockupUrl        = currentMockup?.mockupFront ?? null;
-  const mockupUrlBack    = currentMockup?.mockupBack  ?? null;
+  const mockupUrl        = currentMockup
+    ? (currentSide === 'front' ? currentMockup.mockupFront : currentMockup.mockupBack)
+    : null;
   const price = product ? parseFloat(product.priceRange.minVariantPrice.amount) : 0;
 
   function getColorHex(colorName: string): string {
@@ -169,64 +168,41 @@ export default function ProductDetailPage() {
         {/* DESKTOP: grid 2 colonne */}
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12">
 
-          {/* LEFT — Configuratore */}
+          {/* LEFT — Anteprima prodotto + pulsante configura */}
           <div className="lg:sticky lg:top-20 lg:self-start">
-
-            {/* Configurator: canvas + toolbar side-by-side (desktop) o stacked (mobile) */}
-            {mockupUrl ? (
-              <div className="flex gap-4">
-                {/* Canvas */}
-                <div className="flex-1 min-w-0">
-                  <CanvasEditor
-                    mockupUrl={mockupUrl}
-                    mockupUrlBack={mockupUrlBack ?? undefined}
-                    side={currentSide}
-                    onSideChange={setCurrentSide}
-                    productName={product.title}
-                    printArea={printAreas?.front ?? undefined}
-                    printAreaBack={printAreas?.back ?? undefined}
-                  />
+            {/* Mockup preview */}
+            <div className="relative aspect-square rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
+              {mockupUrl ? (
+                <img src={mockupUrl} alt={product.title}
+                  className="w-full h-full object-contain" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <p className="text-gray-400 text-sm">Seleziona un colore per l'anteprima</p>
                 </div>
-                {/* Toolbar desktop — nascosta su mobile, Configurator la gestisce da sola */}
-                <div className="hidden md:block">
-                  <Configurator
-                    side={currentSide}
-                    onSideChange={setCurrentSide}
-                    onReset={() => { if(confirm('Cancellare il design?')) { window.dispatchEvent(new CustomEvent('resetCanvas')); toast.success('Design cancellato'); }}}
-                    printArea={printAreas?.front ?? undefined}
-                    printAreaBack={printAreas?.back ?? undefined}
-                  />
-                </div>
+              )}
+              {/* Badge lato */}
+              <div className="absolute top-3 right-3">
+                <span className="bg-black/60 text-white text-xs font-bold px-3 py-1.5 rounded-full">{currentSide === 'front' ? '● FRONTE' : '● RETRO'}</span>
               </div>
-            ) : (
-              <div className="aspect-square bg-gray-100 rounded-2xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200">
-                {selectedColor && !currentMockup ? (
-                  <>
-                    <div className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
-                      style={{ backgroundColor: getColorHex(selectedColor) }} />
-                    <p className="font-medium">{selectedColor}</p>
-                    <p className="text-sm text-gray-400 text-center px-8">
-                      Mockup non configurato.<br />
-                      Vai su <code className="bg-gray-200 px-1 rounded text-xs">/admin/mockups</code>
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-gray-400">Seleziona un colore per iniziare</p>
-                )}
-              </div>
-            )}
+            </div>
 
-            {/* Configurator mobile — solo su mobile, mostra bottom bar + sheet */}
+            {/* Switch fronte/retro sotto preview */}
+            <div className="flex gap-2 mt-3">
+              {(['front','back'] as const).map(s => (
+                <button key={s} onClick={() => setCurrentSide(s)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${currentSide === s ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                  {s === 'front' ? '👕 Fronte' : '🔄 Retro'}
+                </button>
+              ))}
+            </div>
+
+            {/* Bottone configura */}
             {mockupUrl && (
-              <div className="md:hidden">
-                <Configurator
-                  side={currentSide}
-                  onSideChange={setCurrentSide}
-                  onReset={() => { if(confirm('Cancellare il design?')) { window.dispatchEvent(new CustomEvent('resetCanvas')); toast.success('Design cancellato'); }}}
-                  printArea={printAreas?.front ?? undefined}
-                  printAreaBack={printAreas?.back ?? undefined}
-                />
-              </div>
+              <Link href={`/customize/${handle}`}>
+                <button className="w-full mt-3 bg-orange-600 hover:bg-orange-700 text-white py-4 rounded-2xl font-bold text-base transition-colors flex items-center justify-center gap-2">
+                  🎨 Personalizza il design
+                </button>
+              </Link>
             )}
           </div>
 
