@@ -24,7 +24,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
   const [canvasSize, setCanvasSize] = useState(ORIGINAL_CANVAS_SIZE);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Storage key unico per ogni lato
   const storageKey = `design-${side}`;
 
   useEffect(() => {
@@ -33,9 +32,13 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       
       const containerWidth = containerRef.current.offsetWidth;
       const isMobile = window.innerWidth < 768;
-      const maxSize = isMobile ? containerWidth : Math.min(containerWidth, ORIGINAL_CANVAS_SIZE);
+      // Su mobile sottrai padding per evitare overflow
+      const maxSize = isMobile 
+        ? Math.min(containerWidth - 32, ORIGINAL_CANVAS_SIZE) 
+        : Math.min(containerWidth, ORIGINAL_CANVAS_SIZE);
       
       setCanvasSize(maxSize);
+      console.log(`📱 Canvas Size: ${maxSize}px (Mobile: ${isMobile})`);
     };
 
     calculateSize();
@@ -79,7 +82,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
     return { x: imgX, y: imgY, width: imgWidth, height: imgHeight };
   };
 
-  // SALVA stato del lato corrente prima di cambiare
   const saveCurrentState = (canvas: fabric.Canvas) => {
     try {
       const objects = canvas.getObjects().filter(obj => (obj as any).name !== 'printArea');
@@ -88,7 +90,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
         designStorage[storageKey] = state;
         console.log(`💾 Salvato design per ${side}:`, objects.length, 'oggetti');
       } else {
-        // Se non ci sono oggetti, rimuovi il salvataggio
         delete designStorage[storageKey];
         console.log(`🗑️ Rimosso salvataggio vuoto per ${side}`);
       }
@@ -97,14 +98,12 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
     }
   };
 
-  // CARICA stato del lato corrente
   const loadSavedState = (canvas: fabric.Canvas) => {
     const savedState = designStorage[storageKey];
     if (savedState) {
       try {
         console.log(`📂 Caricamento design per ${side}...`);
         canvas.loadFromJSON(savedState, () => {
-          // Ripristina il print area rect dopo il caricamento
           const printAreaRect = canvas.getObjects().find(obj => (obj as any).name === 'printArea');
           if (printAreaRect) {
             canvas.sendToBack(printAreaRect);
@@ -123,7 +122,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current || !imgLoaded || canvasSize === 0) return;
 
-    // SALVA lo stato del lato precedente prima di reinizializzare
     if (fabricCanvasRef.current) {
       saveCurrentState(fabricCanvasRef.current);
     }
@@ -132,17 +130,24 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       const imgBounds = getImageBounds();
       if (!imgBounds) return;
 
-      const xPercent = printArea?.xPercent || 35;
-      const yPercent = printArea?.yPercent || 30;
-      const widthPercent = printArea?.widthPercent || 30;
-      const heightPercent = printArea?.heightPercent || 40;
+      // 🎯 USA i valori esatti dal tuo debug
+      const xPercent = printArea?.xPercent || 33.7;
+      const yPercent = printArea?.yPercent || 39.1;
+      const widthPercent = printArea?.widthPercent || 32.6;
+      const heightPercent = printArea?.heightPercent || 41.4;
 
       const printX = imgBounds.x + (imgBounds.width * xPercent / 100);
       const printY = imgBounds.y + (imgBounds.height * yPercent / 100);
       const printWidth = imgBounds.width * widthPercent / 100;
       const printHeight = imgBounds.height * heightPercent / 100;
 
-      // CREA NUOVO CANVAS
+      console.log('🎨 Canvas Setup:', {
+        canvasSize,
+        imgBounds,
+        printArea: { printX, printY, printWidth, printHeight },
+        percentages: { xPercent, yPercent, widthPercent, heightPercent }
+      });
+
       const canvas = new fabric.Canvas(canvasRef.current!, {
         width: ORIGINAL_CANVAS_SIZE,
         height: ORIGINAL_CANVAS_SIZE,
@@ -222,7 +227,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       canvas.on('object:scaling', (e) => constrainToArea(e.target as fabric.Object));
       canvas.on('object:rotating', (e) => constrainToArea(e.target as fabric.Object));
 
-      // Auto-save quando l'utente modifica
       let saveTimeout: NodeJS.Timeout;
       const debouncedSave = () => {
         clearTimeout(saveTimeout);
@@ -233,7 +237,6 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       canvas.on('object:added', debouncedSave);
       canvas.on('object:removed', debouncedSave);
 
-      // CARICA lo stato salvato per questo lato
       loadSavedState(canvas);
 
       setIsReady(true);
@@ -252,14 +255,14 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
       return () => {
         clearTimeout(saveTimeout);
         window.removeEventListener('resetCanvas', handleReset);
-        saveCurrentState(canvas); // Salva prima di distruggere
+        saveCurrentState(canvas);
         canvas.dispose();
       };
     };
 
     const timeoutId = setTimeout(initCanvas, 100);
     return () => clearTimeout(timeoutId);
-  }, [side, printArea, imgLoaded, canvasSize]); // Nota: side è nelle dipendenze!
+  }, [side, printArea, imgLoaded, canvasSize]);
 
   useEffect(() => {
     if (fabricCanvasRef.current && isReady) {
@@ -285,7 +288,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
             className="relative touch-none"
             style={{ width: canvasSize, height: canvasSize }}
           >
-            <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+            "nvas ref={canvasRef} stylee={{ width: '100%', height: '100%', display: 'block' }} />
           </div>
         </div>
 
@@ -306,3 +309,4 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
     </div>
   );
 }
+

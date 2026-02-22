@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useCart } from '@/contexts/CartContext';
 import { 
   Zap, 
   Euro, 
@@ -16,10 +17,13 @@ import {
   ShirtIcon,
   ArrowRight,
   MessageCircle,
-  Award
+  Award,
+  ShoppingCart,
 } from 'lucide-react';
 
 export default function HomePage() {
+  const { totalQuantity } = useCart();
+
   return (
     <div className="min-h-screen bg-white">
       {/* HEADER */}
@@ -34,14 +38,18 @@ export default function HomePage() {
               <Link href="/products" className="text-gray-600 hover:text-orange-600 font-medium transition-colors">
                 Prodotti
               </Link>
-              <Link href="/how-it-works" className="text-gray-600 hover:text-orange-600 font-medium transition-colors">
-                Come Funziona
-              </Link>
-              <Link href="/contact" className="text-gray-600 hover:text-orange-600 font-medium transition-colors">
-                Contatti
-              </Link>
               <Link href="/admin">
                 <Button variant="outline" size="sm">Admin</Button>
+              </Link>
+              <Link href="/cart">
+                <Button variant="ghost" size="sm" className="relative">
+                  <ShoppingCart className="w-5 h-5" />
+                  {totalQuantity > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+                      {totalQuantity}
+                    </span>
+                  )}
+                </Button>
               </Link>
             </nav>
           </div>
@@ -50,7 +58,6 @@ export default function HomePage() {
 
       {/* HERO SECTION */}
       <section className="relative overflow-hidden bg-gradient-to-br from-orange-50 via-white to-blue-50">
-        <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
         <div className="max-w-7xl mx-auto px-4 py-20 lg:py-28 relative">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
@@ -73,7 +80,7 @@ export default function HomePage() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/quick-order">
+                <Link href="/products">
                   <Button size="lg" className="h-14 px-8 text-lg font-semibold w-full sm:w-auto group">
                     Inizia Ora
                     <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
@@ -95,11 +102,9 @@ export default function HomePage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-1">
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                      ))}
                     </div>
                     <p className="text-sm text-gray-600">+1.200 clienti felici</p>
                   </div>
@@ -108,12 +113,8 @@ export default function HomePage() {
             </div>
 
             <div className="relative">
-              <div className="relative rounded-2xl overflow-hidden shadow-2xl">
-                <img 
-                  src="/api/placeholder/600/700" 
-                  alt="Maglietta personalizzata" 
-                  className="w-full"
-                />
+              <div className="relative rounded-2xl overflow-hidden shadow-2xl bg-gray-100 aspect-[6/7] flex items-center justify-center">
+                <ShirtIcon className="w-32 h-32 text-gray-300" />
                 <div className="absolute top-6 right-6 bg-white/95 backdrop-blur-sm px-4 py-3 rounded-xl shadow-lg">
                   <div className="flex items-center gap-2 text-green-600 font-bold">
                     <Clock className="w-5 h-5" />
@@ -130,34 +131,20 @@ export default function HomePage() {
       <section className="border-y bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div className="flex items-center justify-center gap-3">
-              <Clock className="w-8 h-8 text-orange-600" />
-              <div>
-                <div className="font-bold text-gray-900">24 Ore</div>
-                <div className="text-sm text-gray-600">Consegna rapida</div>
+            {[
+              { icon: Clock, label: '24 Ore', sub: 'Consegna rapida' },
+              { icon: Euro, label: 'Prezzo Chiaro', sub: 'Tutto incluso' },
+              { icon: Palette, label: '4 Colori', sub: 'Fronte + Retro' },
+              { icon: Award, label: 'Qualità Top', sub: '100% cotone' },
+            ].map(({ icon: Icon, label, sub }) => (
+              <div key={label} className="flex items-center justify-center gap-3">
+                <Icon className="w-8 h-8 text-orange-600" />
+                <div>
+                  <div className="font-bold text-gray-900">{label}</div>
+                  <div className="text-sm text-gray-600">{sub}</div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <Euro className="w-8 h-8 text-orange-600" />
-              <div>
-                <div className="font-bold text-gray-900">Prezzo Chiaro</div>
-                <div className="text-sm text-gray-600">Tutto incluso</div>
-              </div>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <Palette className="w-8 h-8 text-orange-600" />
-              <div>
-                <div className="font-bold text-gray-900">4 Colori</div>
-                <div className="text-sm text-gray-600">Fronte + Retro</div>
-              </div>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <Award className="w-8 h-8 text-orange-600" />
-              <div>
-                <div className="font-bold text-gray-900">Qualità Top</div>
-                <div className="text-sm text-gray-600">100% cotone</div>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>
@@ -175,35 +162,31 @@ export default function HomePage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            <Card className="p-8 text-center hover:shadow-xl transition-shadow border-2 hover:border-orange-200">
-              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <span className="text-3xl font-bold text-orange-600">1</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Scegli il Prodotto</h3>
-              <p className="text-gray-600 leading-relaxed">
-                T-shirt, felpa o cappello. Il <strong>prezzo che vedi include già fronte, retro e 4 colori</strong> di stampa. Zero sorprese.
-              </p>
-            </Card>
-
-            <Card className="p-8 text-center hover:shadow-xl transition-shadow border-2 hover:border-orange-200">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <span className="text-3xl font-bold text-blue-600">2</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Personalizza</h3>
-              <p className="text-gray-600 leading-relaxed">
-                Scrivi il tuo testo o carica una foto. <strong>Ti guidiamo passo dopo passo</strong>, è facilissimo anche se non sei esperto.
-              </p>
-            </Card>
-
-            <Card className="p-8 text-center hover:shadow-xl transition-shadow border-2 hover:border-orange-200">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <span className="text-3xl font-bold text-green-600">3</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Ricevi in 24h</h3>
-              <p className="text-gray-600 leading-relaxed">
-                Stampiamo e spediamo subito. <strong>Domani la tua maglietta è già a casa tua</strong>. Tracciamento incluso.
-              </p>
-            </Card>
+            {[
+              {
+                step: '1', color: 'orange',
+                title: 'Scegli il Prodotto',
+                desc: 'T-shirt, felpa o girocollo. Il prezzo che vedi include già fronte, retro e 4 colori di stampa. Zero sorprese.',
+              },
+              {
+                step: '2', color: 'blue',
+                title: 'Personalizza',
+                desc: 'Scrivi il tuo testo o carica una foto. Ti guidiamo passo dopo passo, è facilissimo anche se non sei esperto.',
+              },
+              {
+                step: '3', color: 'green',
+                title: 'Ricevi in 24h',
+                desc: 'Stampiamo e spediamo subito. Domani la tua maglietta è già a casa tua. Tracciamento incluso.',
+              },
+            ].map(({ step, color, title, desc }) => (
+              <Card key={step} className="p-8 text-center hover:shadow-xl transition-shadow border-2 hover:border-orange-200">
+                <div className={`w-16 h-16 bg-${color}-100 rounded-full flex items-center justify-center mx-auto mb-6`}>
+                  <span className={`text-3xl font-bold text-${color}-600`}>{step}</span>
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">{title}</h3>
+                <p className="text-gray-600 leading-relaxed">{desc}</p>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
@@ -224,37 +207,28 @@ export default function HomePage() {
                 <span className="text-lg">T-Shirt Personalizzata</span>
                 <span className="text-3xl font-bold text-orange-600">€24.90</span>
               </div>
-              
               <div className="space-y-3 text-left">
-                <div className="flex items-center gap-3 text-gray-700">
-                  <Check className="w-6 h-6 text-green-600 flex-shrink-0" />
-                  <span><strong>Fronte e Retro</strong> inclusi</span>
-                </div>
-                <div className="flex items-center gap-3 text-gray-700">
-                  <Check className="w-6 h-6 text-green-600 flex-shrink-0" />
-                  <span><strong>Fino a 4 colori</strong> di stampa</span>
-                </div>
-                <div className="flex items-center gap-3 text-gray-700">
-                  <Check className="w-6 h-6 text-green-600 flex-shrink-0" />
-                  <span><strong>Spedizione gratuita</strong> sopra €50</span>
-                </div>
-                <div className="flex items-center gap-3 text-gray-700">
-                  <Check className="w-6 h-6 text-green-600 flex-shrink-0" />
-                  <span><strong>Consegna in 24 ore</strong></span>
-                </div>
-                <div className="flex items-center gap-3 text-gray-700">
-                  <Check className="w-6 h-6 text-green-600 flex-shrink-0" />
-                  <span><strong>Qualità premium</strong> garantita</span>
-                </div>
+                {[
+                  'Fronte e Retro inclusi',
+                  'Fino a 4 colori di stampa',
+                  'Spedizione gratuita sopra €50',
+                  'Consegna in 24 ore',
+                  'Qualità premium garantita',
+                ].map(item => (
+                  <div key={item} className="flex items-center gap-3 text-gray-700">
+                    <Check className="w-6 h-6 text-green-600 flex-shrink-0" />
+                    <span>{item}</span>
+                  </div>
+                ))}
               </div>
-
-              <Button size="lg" className="w-full h-14 text-lg font-semibold mt-8">
-                Inizia Subito
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
+              <Link href="/products" className="block">
+                <Button size="lg" className="w-full h-14 text-lg font-semibold mt-4">
+                  Inizia Subito
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
             </div>
           </Card>
-
           <p className="text-sm text-gray-500 mt-6">
             * Prezzi IVA inclusa. Nessun costo aggiuntivo alla cassa.
           </p>
@@ -269,55 +243,21 @@ export default function HomePage() {
               Perché Scegliere Noi?
             </h2>
           </div>
-
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <Card className="p-8 hover:shadow-xl transition-shadow">
-              <Zap className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Velocità Garantita</h3>
-              <p className="text-gray-600">
-                Ordina oggi, indossa domani. La nostra promessa di consegna in 24 ore è garantita al 100%.
-              </p>
-            </Card>
-
-            <Card className="p-8 hover:shadow-xl transition-shadow">
-              <Shield className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Qualità Certificata</h3>
-              <p className="text-gray-600">
-                Tessuti 100% cotone premium e stampa professionale DTG. Garanzia soddisfatti o rimborsati.
-              </p>
-            </Card>
-
-            <Card className="p-8 hover:shadow-xl transition-shadow">
-              <MessageCircle className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Assistenza Sempre</h3>
-              <p className="text-gray-600">
-                Hai bisogno di aiuto? Il nostro team risponde su WhatsApp in pochi minuti. Siamo qui per te.
-              </p>
-            </Card>
-
-            <Card className="p-8 hover:shadow-xl transition-shadow">
-              <Euro className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Prezzo Onesto</h3>
-              <p className="text-gray-600">
-                Nessun sovrapprezzo nascosto. Il prezzo include tutto: fronte, retro e tutti i colori che vuoi.
-              </p>
-            </Card>
-
-            <Card className="p-8 hover:shadow-xl transition-shadow">
-              <Palette className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Libertà Creativa</h3>
-              <p className="text-gray-600">
-                4 colori, fronte e retro, foto e testo. Crea esattamente ciò che hai in mente, senza limiti.
-              </p>
-            </Card>
-
-            <Card className="p-8 hover:shadow-xl transition-shadow">
-              <Truck className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Spedizione Tracciata</h3>
-              <p className="text-gray-600">
-                Traccia il tuo ordine in tempo reale. Saprai sempre dove si trova la tua maglietta.
-              </p>
-            </Card>
+            {[
+              { icon: Zap, title: 'Velocità Garantita', desc: 'Ordina oggi, indossa domani. La nostra promessa di consegna in 24 ore è garantita al 100%.' },
+              { icon: Shield, title: 'Qualità Certificata', desc: 'Tessuti 100% cotone premium e stampa professionale DTG. Garanzia soddisfatti o rimborsati.' },
+              { icon: MessageCircle, title: 'Assistenza Sempre', desc: 'Il nostro team risponde su WhatsApp in pochi minuti. Siamo qui per te.' },
+              { icon: Euro, title: 'Prezzo Onesto', desc: 'Nessun sovrapprezzo nascosto. Il prezzo include tutto: fronte, retro e tutti i colori che vuoi.' },
+              { icon: Palette, title: 'Libertà Creativa', desc: '4 colori, fronte e retro, foto e testo. Crea esattamente ciò che hai in mente, senza limiti.' },
+              { icon: Truck, title: 'Spedizione Tracciata', desc: 'Traccia il tuo ordine in tempo reale. Saprai sempre dove si trova la tua maglietta.' },
+            ].map(({ icon: Icon, title, desc }) => (
+              <Card key={title} className="p-8 hover:shadow-xl transition-shadow">
+                <Icon className="w-12 h-12 text-orange-600 mb-4" />
+                <h3 className="text-xl font-bold text-gray-900 mb-3">{title}</h3>
+                <p className="text-gray-600">{desc}</p>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
@@ -329,12 +269,10 @@ export default function HomePage() {
             Pronto a Creare la Tua Maglietta?
           </h2>
           <p className="text-xl mb-10 opacity-90">
-            Servizio veloce, prezzo chiaro, qualità garantita. 
-            <br />
-            Cosa stai aspettando?
+            Servizio veloce, prezzo chiaro, qualità garantita.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/quick-order">
+            <Link href="/products">
               <Button size="lg" variant="secondary" className="h-14 px-8 text-lg font-semibold w-full sm:w-auto">
                 Inizia Ora
                 <ArrowRight className="w-5 h-5 ml-2" />
@@ -361,11 +299,8 @@ export default function HomePage() {
               <p className="text-sm text-gray-400">
                 Magliette personalizzate di qualità, consegnate in 24-48 ore.
               </p>
-              <p className="text-sm text-gray-400 mt-4">
-                by JUST LEGIT LLC
-              </p>
+              <p className="text-sm text-gray-400 mt-4">by JUST LEGIT LLC</p>
             </div>
-            
             <div>
               <h4 className="font-bold text-white mb-4">Prodotti</h4>
               <ul className="space-y-2 text-sm">
@@ -374,17 +309,14 @@ export default function HomePage() {
                 <li><Link href="/products?category=sweatshirt" className="hover:text-orange-600 transition-colors">Sweatshirt</Link></li>
               </ul>
             </div>
-            
             <div>
               <h4 className="font-bold text-white mb-4">Supporto</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link href="/how-it-works" className="hover:text-orange-600 transition-colors">Come Funziona</Link></li>
-                <li><Link href="/faq" className="hover:text-orange-600 transition-colors">FAQ</Link></li>
-                <li><Link href="/contact" className="hover:text-orange-600 transition-colors">Contatti</Link></li>
-                <li><Link href="/shipping" className="hover:text-orange-600 transition-colors">Spedizioni</Link></li>
+                <li><Link href="/products" className="hover:text-orange-600 transition-colors">Catalogo</Link></li>
+                <li><Link href="/cart" className="hover:text-orange-600 transition-colors">Carrello</Link></li>
+                <li><a href="mailto:assistenza@customizzaora.it" className="hover:text-orange-600 transition-colors">Contatti</a></li>
               </ul>
             </div>
-            
             <div>
               <h4 className="font-bold text-white mb-4">Legale</h4>
               <ul className="space-y-2 text-sm">
@@ -399,17 +331,14 @@ export default function HomePage() {
               </ul>
             </div>
           </div>
-          
-          <div className="border-t border-gray-800 pt-8">
-            <div className="text-sm text-center text-gray-400">
-              <p className="mb-3">© 2025 PrintShop by JUST LEGIT LLC. Tutti i diritti riservati.</p>
-              <div className="flex flex-wrap justify-center gap-2 md:gap-4">
-                <Link href="/privacy-policy" className="hover:text-orange-600 transition-colors">Privacy</Link>
-                <span className="hidden md:inline">|</span>
-                <Link href="/terms-and-conditions" className="hover:text-orange-600 transition-colors">Termini</Link>
-                <span className="hidden md:inline">|</span>
-                <Link href="/cookie-policy" className="hover:text-orange-600 transition-colors">Cookie</Link>
-              </div>
+          <div className="border-t border-gray-800 pt-8 text-sm text-center text-gray-400">
+            <p className="mb-3">© 2025 PrintShop by JUST LEGIT LLC. Tutti i diritti riservati.</p>
+            <div className="flex flex-wrap justify-center gap-4">
+              <Link href="/privacy-policy" className="hover:text-orange-600 transition-colors">Privacy</Link>
+              <span>|</span>
+              <Link href="/terms-and-conditions" className="hover:text-orange-600 transition-colors">Termini</Link>
+              <span>|</span>
+              <Link href="/cookie-policy" className="hover:text-orange-600 transition-colors">Cookie</Link>
             </div>
           </div>
         </div>
@@ -417,4 +346,3 @@ export default function HomePage() {
     </div>
   );
 }
-
