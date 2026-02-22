@@ -176,8 +176,8 @@ export function findVariantId(
   size: string
 ): string | null {
   const variant = product.variants.edges.find(({ node }) => {
-    const colorOpt = node.selectedOptions.find(o => o.name === 'Color')
-    const sizeOpt = node.selectedOptions.find(o => o.name === 'Size')
+    const colorOpt = node.selectedOptions.find(o => o.name === 'Colore' || o.name === 'Color')
+    const sizeOpt = node.selectedOptions.find(o => o.name === 'Taglia' || o.name === 'Size')
     return colorOpt?.value === color && sizeOpt?.value === size
   })
   return variant?.node.id ?? null
