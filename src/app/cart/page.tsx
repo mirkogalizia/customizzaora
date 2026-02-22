@@ -1,12 +1,14 @@
 'use client';
 
 import { useCart } from '@/contexts/CartContext';
-import { CartLine } from '@/lib/shopify/shopify-cart';
+import { ShopifyCart } from '@/lib/shopify/storefront';
 import {
-  ShoppingBag, Trash2, Plus, Minus, ArrowRight,
-  Package, ArrowLeft, RotateCcw, Tag
+  ShoppingBag, Trash2, Plus, Minus,
+  ArrowRight, Package, ArrowLeft, RotateCcw,
 } from 'lucide-react';
 import Link from 'next/link';
+
+type CartLine = ShopifyCart['lines']['edges'][number]['node'];
 
 function CartLineRow({ line }: { line: CartLine }) {
   const { updateItem, removeItem, loading } = useCart();
@@ -17,18 +19,17 @@ function CartLineRow({ line }: { line: CartLine }) {
   const taglia     = attributes.find(a => a.key === 'taglia')?.value;
   const previewUrl = attributes.find(a => a.key === 'preview_url')?.value;
   const handle     = attributes.find(a => a.key === 'handle')?.value;
-
-  const price      = parseFloat(merchandise.priceV2.amount);
-  const lineTotal  = price * quantity;
+  const unitPrice  = parseFloat(merchandise.price.amount);
+  const imgUrl     = merchandise.product.images.edges[0]?.node.url;
 
   return (
-    <div className="flex gap-4 py-6 border-b border-gray-100">
+    <div className="flex gap-4 py-6 border-b border-gray-100 last:border-0">
       {/* Immagine */}
       <div className="relative w-24 h-24 md:w-28 md:h-28 flex-shrink-0 bg-gray-50 rounded-2xl overflow-hidden border border-gray-100">
         {previewUrl ? (
-          <img src={previewUrl} alt="preview design" className="w-full h-full object-contain" />
-        ) : merchandise.image ? (
-          <img src={merchandise.image.url} alt={merchandise.product.title} className="w-full h-full object-contain" />
+          <img src={previewUrl} alt="design" className="w-full h-full object-contain" />
+        ) : imgUrl ? (
+          <img src={imgUrl} alt={merchandise.product.title} className="w-full h-full object-contain" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <Package className="w-8 h-8 text-gray-200" />
@@ -41,7 +42,7 @@ function CartLineRow({ line }: { line: CartLine }) {
         )}
       </div>
 
-      {/* Dettagli */}
+      {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -56,7 +57,6 @@ function CartLineRow({ line }: { line: CartLine }) {
                 {taglia && <span className="font-medium text-gray-700"> · {taglia}</span>}
               </span>
             </div>
-
             {handle && (
               <Link href={`/products/${handle}`}
                 className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 mt-2 transition-colors">
@@ -64,41 +64,36 @@ function CartLineRow({ line }: { line: CartLine }) {
               </Link>
             )}
           </div>
-
-          {/* Prezzo desktop */}
           <span className="hidden md:block text-lg font-bold text-gray-900 flex-shrink-0">
-            €{lineTotal.toFixed(2)}
+            €{(unitPrice * quantity).toFixed(2)}
           </span>
         </div>
 
-        {/* Quantità + rimuovi */}
         <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center gap-1 border-2 border-gray-200 rounded-xl overflow-hidden">
+          <div className="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden">
             <button
               onClick={() => quantity > 1 ? updateItem(line.id, quantity - 1) : removeItem(line.id)}
               disabled={loading}
-              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-40"
-            >
+              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40 transition-colors">
               <Minus className="w-3.5 h-3.5" />
             </button>
             <span className="w-10 text-center font-bold text-sm">{quantity}</span>
             <button
               onClick={() => updateItem(line.id, quantity + 1)}
               disabled={loading}
-              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-40"
-            >
+              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40 transition-colors">
               <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Prezzo mobile */}
-            <span className="md:hidden font-bold text-gray-900">€{lineTotal.toFixed(2)}</span>
+            <span className="md:hidden font-bold text-gray-900">
+              €{(unitPrice * quantity).toFixed(2)}
+            </span>
             <button
               onClick={() => removeItem(line.id)}
               disabled={loading}
-              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-40"
-            >
+              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl disabled:opacity-40 transition-colors">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
@@ -109,7 +104,8 @@ function CartLineRow({ line }: { line: CartLine }) {
 }
 
 export default function CartPage() {
-  const { lines, totalQuantity, subtotal, goToCheckout, loading } = useCart();
+  const { cart, totalQuantity, subtotal, goToCheckout, loading } = useCart();
+  const lines    = cart?.lines.edges.map(e => e.node) ?? [];
   const shipping = subtotal >= 50 ? 0 : 4.99;
   const total    = subtotal + shipping;
 
@@ -120,7 +116,7 @@ export default function CartPage() {
           <div className="w-24 h-24 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-6">
             <ShoppingBag className="w-10 h-10 text-gray-300" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Il carrello è vuoto</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Carrello vuoto</h1>
           <p className="text-gray-500 mb-8">Personalizza un prodotto e aggiungilo qui!</p>
           <Link href="/products"
             className="inline-flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl px-8 py-4 font-bold text-base transition-colors">
@@ -141,10 +137,9 @@ export default function CartPage() {
             <ArrowLeft className="w-4 h-4" />Continua lo shopping
           </Link>
           <Link href="/" className="text-xl font-bold text-orange-600">Print Shop</Link>
-          <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-            <ShoppingBag className="w-4 h-4" />
+          <span className="text-sm font-medium text-gray-700">
             {totalQuantity} {totalQuantity === 1 ? 'articolo' : 'articoli'}
-          </div>
+          </span>
         </div>
       </header>
 
@@ -175,23 +170,16 @@ export default function CartPage() {
                     {shipping === 0 ? '🎉 Gratuita' : `€${shipping.toFixed(2)}`}
                   </span>
                 </div>
-                {shipping === 0 && subtotal >= 50 && (
-                  <div className="flex items-center gap-1.5 text-green-700 bg-green-50 rounded-xl px-3 py-2 text-xs font-medium">
-                    <Tag className="w-3.5 h-3.5" />
-                    Spedizione gratuita applicata!
-                  </div>
-                )}
               </div>
 
-              {/* Barra spedizione gratuita */}
               {subtotal < 50 && (
                 <div className="bg-orange-50 rounded-xl p-3">
                   <p className="text-xs text-orange-700 font-medium mb-1.5">
-                    Aggiungi <strong>€{(50 - subtotal).toFixed(2)}</strong> per la spedizione gratuita
+                    Ancora <strong>€{(50 - subtotal).toFixed(2)}</strong> per spedizione gratuita
                   </p>
                   <div className="h-2 bg-orange-200 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-orange-500 rounded-full transition-all duration-500"
+                      className="h-full bg-orange-500 rounded-full transition-all"
                       style={{ width: `${Math.min(100, (subtotal / 50) * 100)}%` }}
                     />
                   </div>
@@ -206,19 +194,14 @@ export default function CartPage() {
               <button
                 onClick={goToCheckout}
                 disabled={loading || lines.length === 0}
-                className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white rounded-2xl py-4 font-bold text-base transition-colors shadow-md"
-              >
+                className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700
+                  disabled:opacity-60 text-white rounded-2xl py-4 font-bold text-base transition-colors shadow-md">
                 Checkout sicuro <ArrowRight className="w-4 h-4" />
               </button>
 
-              {/* Trust badges */}
-              <div className="pt-2 space-y-2">
-                {[
-                  '🔒 Pagamento sicuro SSL',
-                  '⚡ Spedizione in 24 ore',
-                  '↩️ Reso gratuito 30 giorni',
-                ].map(b => (
-                  <p key={b} className="text-xs text-gray-400 flex items-center gap-1">{b}</p>
+              <div className="pt-1 space-y-1.5">
+                {['🔒 Pagamento sicuro SSL', '⚡ Spedizione in 24 ore', '↩️ Reso gratuito 30 giorni'].map(b => (
+                  <p key={b} className="text-xs text-gray-400">{b}</p>
                 ))}
               </div>
             </div>
