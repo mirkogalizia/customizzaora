@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getProduct, getColors } from '@/lib/firebase/products';
-import { Product, Color } from '@/types';
+import { getShopifyProduct, findVariantId, ShopifyProduct } from '@/lib/shopify/storefront';
+import { getProductMockups, ColorMockup } from '@/lib/firebase/mockups';
 import { Button } from '@/components/ui/button';
 import { CanvasEditor } from '@/components/customizer/CanvasEditor';
 import { Toolbar } from '@/components/customizer/Toolbar';
@@ -11,86 +11,67 @@ import Link from 'next/link';
 import { ArrowLeft, ShoppingCart, Loader2, Check, ChevronDown, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCart } from '@/contexts/CartContext';
-import { getShopifyProduct, findVariantId, ShopifyProduct } from '@/lib/shopify/storefront';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-// Mappa categoria Firebase → handle prodotto Shopify
-const SHOPIFY_HANDLE_MAP: Record<string, string> = {
-  'tshirt': 'tshirt-personalizzata-spedizione-24h',
-  'hoodie': 'felpa-personalizzata-spedizione-24h',
-  'sweatshirt': 'girocollo-personalizzata-spedizione-24h',
+// Shopify numeric ID per ogni handle — serve per caricare mockup da Firebase
+const HANDLE_TO_SHOPIFY_ID: Record<string, string> = {
+  'tshirt-personalizzata-spedizione-24h': '15409340350789',
+  'felpa-personalizzata-spedizione-24h': '15598323237189',
+  'girocollo-personalizzata-spedizione-24h': '15598448148805',
 };
 
-// Mappa nome colore Firebase → nome colore Shopify
-// Verifica che i nomi corrispondano esattamente a quelli nelle varianti Shopify
-const COLOR_NAME_MAP: Record<string, string> = {
-  'nero': 'Black',
-  'bianco': 'White',
-  'blu navy': 'Navy',
-  'navy': 'Navy',
-  'indaco': 'Indigo',
-  'indigo': 'Indigo',
-  'azzurro': 'Light Blue',
-  'light blue': 'Light Blue',
-  'menta': 'Mint',
-  'mint': 'Mint',
-  'verde': 'Forest Green',
-  'forest green': 'Forest Green',
-  'viola': 'Purple',
-  'purple': 'Purple',
+// Hex approssimativi per gli swatch colore
+const COLOR_HEX: Record<string, string> = {
+  'Black': '#111111',
+  'White': '#FFFFFF',
+  'Navy': '#1B2A4A',
+  'Indigo': '#4B0082',
+  'Light Blue': '#ADD8E6',
+  'Mint': '#98FFD0',
+  'Forest Green': '#228B22',
+  'Purple': '#800080',
 };
-
-function normalizeColorName(name: string): string {
-  return COLOR_NAME_MAP[name.toLowerCase()] ?? name;
-}
 
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const productId = params.id as string;
+  const handle = params.id as string; // è l'handle Shopify es. "tshirt-personalizzata-spedizione-24h"
   const { addItem, loading: cartLoading, totalQuantity } = useCart();
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [colors, setColors] = useState<Color[]>([]);
+  const [product, setProduct] = useState<ShopifyProduct | null>(null);
+  const [mockups, setMockups] = useState<Record<string, ColorMockup>>({});
   const [loading, setLoading] = useState(true);
-  const [shopifyProduct, setShopifyProduct] = useState<ShopifyProduct | null>(null);
 
-  const [selectedColor, setSelectedColor] = useState<Color | null>(null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string>('M');
   const [currentSide, setCurrentSide] = useState<'front' | 'back'>('front');
   const [quantity, setQuantity] = useState(1);
   const [showEditor, setShowEditor] = useState(true);
 
-  useEffect(() => {
-    loadProduct();
-  }, [productId]);
+  useEffect(() => { loadProduct(); }, [handle]);
 
   const loadProduct = async () => {
     try {
-      const productData = await getProduct(productId);
-      if (!productData) {
+      // Carica da Shopify usando l'handle
+      const sp = await getShopifyProduct(handle);
+      if (!sp) {
         toast.error('Prodotto non trovato');
         router.push('/products');
         return;
       }
+      setProduct(sp);
 
-      setProduct(productData);
+      // Primo colore disponibile come default
+      const firstColor = sp.variants.edges[0]?.node.selectedOptions
+        .find(o => o.name === 'Color')?.value ?? null;
+      setSelectedColor(firstColor);
 
-      // Carica colori da Firebase
-      const colorsData = await getColors(productId);
-      setColors(colorsData);
-      if (colorsData.length > 0) setSelectedColor(colorsData[0]);
-
-      // Carica prodotto da Shopify in parallelo
-      const handle = SHOPIFY_HANDLE_MAP[productData.category];
-      if (handle) {
-        try {
-          const sp = await getShopifyProduct(handle);
-          setShopifyProduct(sp);
-        } catch (err) {
-          console.warn('Shopify product not loaded:', err);
-        }
+      // Carica mockup da Firebase (se già configurati dall'admin)
+      const shopifyId = HANDLE_TO_SHOPIFY_ID[handle];
+      if (shopifyId) {
+        const saved = await getProductMockups(shopifyId);
+        if (saved?.colors) setMockups(saved.colors);
       }
     } catch (error) {
       console.error('Error loading product:', error);
@@ -100,6 +81,21 @@ export default function ProductDetailPage() {
     }
   };
 
+  // Colori unici dalle varianti Shopify (es. Black, White, Navy...)
+  const uniqueColors = product
+    ? [...new Set(
+        product.variants.edges
+          .map(e => e.node.selectedOptions.find(o => o.name === 'Color')?.value)
+          .filter((c): c is string => Boolean(c))
+      )]
+    : [];
+
+  const currentMockup = selectedColor ? mockups[selectedColor] : null;
+  const mockupUrl = currentMockup
+    ? (currentSide === 'front' ? currentMockup.mockupFront : currentMockup.mockupBack)
+    : null;
+  const price = product ? parseFloat(product.priceRange.minVariantPrice.amount) : 0;
+
   const handleResetDesign = () => {
     if (confirm('Vuoi cancellare tutto il design?')) {
       window.dispatchEvent(new CustomEvent('resetCanvas'));
@@ -108,51 +104,32 @@ export default function ProductDetailPage() {
   };
 
   const handleAddToCart = async () => {
-    if (!selectedColor) {
-      toast.error('Seleziona un colore');
-      return;
-    }
-
-    if (!shopifyProduct) {
-      toast.error('Prodotto Shopify non disponibile, riprova');
-      return;
-    }
+    if (!selectedColor) { toast.error('Seleziona un colore'); return; }
+    if (!product) return;
 
     try {
-      // 1. Esporta preview dal canvas
       const fabricCanvas = (window as any).fabricCanvas;
       const previewUrl = fabricCanvas
         ? fabricCanvas.toDataURL({ format: 'png', quality: 0.7 })
         : null;
 
-      // 2. Trova variantId Shopify da colore + taglia
-      const shopifyColorName = normalizeColorName(selectedColor.name);
-      const variantId = findVariantId(shopifyProduct, shopifyColorName, selectedSize);
-
+      const variantId = findVariantId(product, selectedColor, selectedSize);
       if (!variantId) {
-        toast.error(`Variante "${shopifyColorName} / ${selectedSize}" non trovata su Shopify`);
-        console.warn('Available variants:', shopifyProduct.variants.edges.map(e => e.node.title));
+        toast.error(`Variante ${selectedColor} / ${selectedSize} non disponibile`);
         return;
       }
 
-      // 3. Attributi custom — visibili nell'ordine Shopify admin
       const attributes: { key: string; value: string }[] = [
-        { key: 'colore', value: selectedColor.name },
-        { key: 'colore_hex', value: selectedColor.hex },
+        { key: 'colore', value: selectedColor },
+        { key: 'colore_hex', value: COLOR_HEX[selectedColor] ?? '#000000' },
         { key: 'taglia', value: selectedSize },
-        { key: 'prodotto_firebase_id', value: product!.id },
-        { key: 'quantita', value: String(quantity) },
+        { key: 'handle', value: handle },
       ];
-      if (previewUrl) {
-        attributes.push({ key: 'preview_url', value: previewUrl });
-      }
+      if (previewUrl) attributes.push({ key: 'preview_url', value: previewUrl });
 
-      // 4. Aggiunge al carrello Shopify
       await addItem(variantId, quantity, attributes);
       toast.success('✅ Aggiunto al carrello!');
-
     } catch (err: any) {
-      console.error('Add to cart error:', err);
       toast.error(err.message || 'Errore aggiunta al carrello');
     }
   };
@@ -167,12 +144,6 @@ export default function ProductDetailPage() {
 
   if (!product) return null;
 
-  const currentMockup = selectedColor
-    ? (currentSide === 'front' ? selectedColor.mockupFront : selectedColor.mockupBack)
-    : null;
-
-  const isAddToCartDisabled = !selectedColor || cartLoading || !shopifyProduct;
-
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -181,17 +152,13 @@ export default function ProductDetailPage() {
           <div className="flex items-center justify-between">
             <Link href="/products">
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Catalogo
+                <ArrowLeft className="w-4 h-4 mr-2" />Catalogo
               </Button>
             </Link>
-            <Link href="/" className="text-xl font-bold text-orange-600">
-              Print Shop
-            </Link>
+            <Link href="/" className="text-xl font-bold text-orange-600">Print Shop</Link>
             <Link href="/cart">
               <Button variant="ghost" size="sm" className="relative">
-                <ShoppingCart className="w-4 h-4 mr-2" />
-                Carrello
+                <ShoppingCart className="w-4 h-4 mr-2" />Carrello
                 {totalQuantity > 0 && (
                   <span className="ml-1 bg-orange-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                     {totalQuantity}
@@ -203,29 +170,23 @@ export default function ProductDetailPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-6 lg:py-10">
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12">
 
-          {/* LEFT - Canvas */}
+          {/* LEFT — Canvas editor */}
           <div className="lg:sticky lg:top-6 lg:self-start">
             <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setCurrentSide('front')}
-                className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-all ${
-                  currentSide === 'front' ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                Fronte
-              </button>
-              <button
-                onClick={() => setCurrentSide('back')}
-                className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-all ${
-                  currentSide === 'back' ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                Retro
-              </button>
+              {(['front', 'back'] as const).map(side => (
+                <button
+                  key={side}
+                  onClick={() => setCurrentSide(side)}
+                  className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-all ${
+                    currentSide === side ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  {side === 'front' ? 'Fronte' : 'Retro'}
+                </button>
+              ))}
               <button
                 onClick={handleResetDesign}
                 className="px-4 py-2.5 text-sm font-medium rounded-md bg-red-50 hover:bg-red-100 text-red-700 transition-colors"
@@ -235,73 +196,67 @@ export default function ProductDetailPage() {
               </button>
             </div>
 
-            {selectedColor && currentMockup ? (
+            {mockupUrl ? (
               <CanvasEditor
-                mockupUrl={currentMockup}
+                mockupUrl={mockupUrl}
                 side={currentSide}
-                productName={product.name}
-                printArea={product.printAreas?.[currentSide]}
+                productName={product.title}
+                printArea={currentMockup?.printArea}
               />
             ) : (
-              <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-                <p className="text-gray-400">Seleziona un colore</p>
+              <div className="aspect-square bg-gray-100 rounded-lg flex flex-col items-center justify-center gap-2 text-center p-8">
+                {selectedColor && !currentMockup ? (
+                  <>
+                    <p className="text-gray-500 font-medium">Mockup non ancora configurato</p>
+                    <p className="text-sm text-gray-400">Vai su <code className="bg-gray-200 px-1 rounded">/admin/mockups</code> per caricare le immagini</p>
+                  </>
+                ) : (
+                  <p className="text-gray-400">Seleziona un colore per iniziare</p>
+                )}
               </div>
             )}
-
-            {/* Shopify status badge */}
-            <div className="mt-2 text-xs">
-              {shopifyProduct ? (
-                <span className="text-green-600">✓ Collegato a Shopify</span>
-              ) : (
-                <span className="text-amber-500">⏳ Caricamento Shopify...</span>
-              )}
-            </div>
           </div>
 
-          {/* RIGHT - Product Info */}
+          {/* RIGHT — Info + configurazione */}
           <div className="space-y-6">
             <div>
-              <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
+              <h1 className="text-3xl font-bold mb-2">{product.title}</h1>
               <div className="text-2xl font-semibold">
-                €{(product.basePrice * quantity).toFixed(2)}
+                €{(price * quantity).toFixed(2)}
               </div>
-              <p className="text-sm text-gray-500 mt-1">IVA inclusa • Spedizione gratuita</p>
+              <p className="text-sm text-gray-500 mt-1">IVA inclusa • Spedizione gratuita sopra €50</p>
             </div>
 
-            <p className="text-gray-700 leading-relaxed">{product.description}</p>
-
-            {/* Color Selection */}
-            {colors.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium">Colore</span>
-                  {selectedColor && (
-                    <span className="text-sm text-gray-600">{selectedColor.name}</span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {colors.map((color) => (
-                    <button
-                      key={color.id}
-                      onClick={() => setSelectedColor(color)}
-                      className={`w-12 h-12 rounded-full border-2 transition-all ${
-                        selectedColor?.id === color.id
-                          ? 'border-gray-900 scale-110'
-                          : 'border-gray-300 hover:border-gray-400'
-                      }`}
-                      style={{ backgroundColor: color.hex }}
-                      title={color.name}
-                    >
-                      {selectedColor?.id === color.id && (
-                        <Check className="w-5 h-5 text-white mx-auto drop-shadow" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {product.description && (
+              <p className="text-gray-700 leading-relaxed">{product.description}</p>
             )}
 
-            {/* Size Selection */}
+            {/* Selezione colore */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium">Colore</span>
+                {selectedColor && <span className="text-sm text-gray-600">{selectedColor}</span>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {uniqueColors.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => setSelectedColor(color)}
+                    className={`w-12 h-12 rounded-full border-2 transition-all flex items-center justify-center ${
+                      selectedColor === color ? 'border-gray-900 scale-110' : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    style={{ backgroundColor: COLOR_HEX[color] ?? '#ccc' }}
+                    title={color}
+                  >
+                    {selectedColor === color && (
+                      <Check className={`w-5 h-5 drop-shadow ${color === 'White' ? 'text-gray-800' : 'text-white'}`} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Selezione taglia */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium">Taglia</span>
@@ -324,14 +279,11 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* Toolbar */}
+            {/* Toolbar personalizzazione */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium">🎨 Personalizza il tuo design</span>
-                <button
-                  onClick={() => setShowEditor(!showEditor)}
-                  className="text-sm text-gray-600 underline"
-                >
+                <button onClick={() => setShowEditor(!showEditor)} className="text-sm text-gray-600 underline">
                   {showEditor ? 'Nascondi' : 'Mostra'}
                 </button>
               </div>
@@ -342,23 +294,13 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {/* Quantity */}
+            {/* Quantità */}
             <div>
               <span className="text-sm font-medium mb-3 block">Quantità</span>
               <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold"
-                >
-                  −
-                </button>
+                <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold text-lg">−</button>
                 <span className="text-lg font-medium w-8 text-center">{quantity}</span>
-                <button
-                  onClick={() => setQuantity(Math.min(99, quantity + 1))}
-                  className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold"
-                >
-                  +
-                </button>
+                <button onClick={() => setQuantity(Math.min(99, quantity + 1))} className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold text-lg">+</button>
               </div>
             </div>
 
@@ -366,11 +308,11 @@ export default function ProductDetailPage() {
               onClick={handleAddToCart}
               size="lg"
               className="w-full h-12 text-base font-medium"
-              disabled={isAddToCartDisabled}
+              disabled={!selectedColor || cartLoading}
             >
               {cartLoading
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Aggiunta in corso...</>
-                : `Aggiungi al carrello • €${(product.basePrice * quantity).toFixed(2)}`
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Aggiunta...</>
+                : `Aggiungi al carrello • €${(price * quantity).toFixed(2)}`
               }
             </Button>
 
@@ -391,8 +333,7 @@ export default function ProductDetailPage() {
 
             <details className="border-t pt-6">
               <summary className="cursor-pointer font-medium flex items-center justify-between">
-                Dettagli prodotto
-                <ChevronDown className="w-5 h-5" />
+                Dettagli prodotto <ChevronDown className="w-5 h-5" />
               </summary>
               <div className="mt-4 text-sm text-gray-600 space-y-2">
                 <p>• Materiale: 100% cotone biologico</p>
@@ -407,4 +348,3 @@ export default function ProductDetailPage() {
     </div>
   );
 }
-

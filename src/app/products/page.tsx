@@ -15,13 +15,6 @@ const HANDLE_TO_CATEGORY: Record<string, string> = {
   'girocollo-personalizzata-spedizione-24h': 'sweatshirt',
 };
 
-// ⚠️ Sostituisci con gli ID reali da Firestore → collezione "products"
-const HANDLE_TO_FIREBASE_ID: Record<string, string> = {
-  'tshirt-personalizzata-spedizione-24h': 'IL_TUO_ID_FIREBASE_TSHIRT',
-  'felpa-personalizzata-spedizione-24h': 'IL_TUO_ID_FIREBASE_FELPA',
-  'girocollo-personalizzata-spedizione-24h': 'IL_TUO_ID_FIREBASE_GIROCOLLO',
-};
-
 const CATEGORIES = [
   { id: 'all', name: 'Tutti i Prodotti', icon: '🎨', description: 'Vedi tutto il catalogo' },
   { id: 'tshirt', name: 'T-Shirt', icon: '👕', description: 'Classiche e comode' },
@@ -31,7 +24,7 @@ const CATEGORIES = [
 
 function adaptProduct(sp: ShopifyProduct) {
   return {
-    id: HANDLE_TO_FIREBASE_ID[sp.handle] ?? sp.handle,
+    handle: sp.handle, // ← usiamo handle come ID nell'URL
     name: sp.title,
     description: sp.description,
     category: HANDLE_TO_CATEGORY[sp.handle] ?? 'tshirt',
@@ -140,8 +133,9 @@ export default function ProductsPage() {
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredProducts.map((product) => (
-                  <Card key={product.id} className="overflow-hidden hover:shadow-2xl transition-all duration-300 group border-2 hover:border-orange-200">
-                    <Link href={`/products/${product.id}`}>
+                  <Card key={product.handle} className="overflow-hidden hover:shadow-2xl transition-all duration-300 group border-2 hover:border-orange-200">
+                    {/* ↓ handle nell'URL invece di ID Firebase */}
+                    <Link href={`/products/${product.handle}`}>
                       <div className="relative aspect-square bg-gray-100 overflow-hidden">
                         {product.mainImage ? (
                           <img src={product.mainImage} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
