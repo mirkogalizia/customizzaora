@@ -48,6 +48,7 @@ export default function ProductDetailPage() {
   const { addItem, loading: cartLoading, totalQuantity } = useCart();
 
   const [product, setProduct] = useState<ShopifyProduct | null>(null);
+  const [productPrintAreas, setProductPrintAreas] = useState<any>(null)
   const [mockups, setMockups] = useState<Record<string, ColorMockup>>({});
   const [loading, setLoading] = useState(true);
 
@@ -76,7 +77,8 @@ export default function ProductDetailPage() {
       const shopifyId = HANDLE_TO_SHOPIFY_ID[handle];
       if (shopifyId) {
         const saved = await getProductMockups(shopifyId);
-        if (saved?.colors) setMockups(saved.colors);
+        if (saved?.colors) setMockups(saved.colors)
+        if (saved?.printAreas) setProductPrintAreas(saved.printAreas);
       }
     } catch (error) {
       console.error('Error loading product:', error);
@@ -116,6 +118,7 @@ export default function ProductDetailPage() {
 
   // Mockup del colore selezionato
   const currentMockup = selectedColor ? mockups[selectedColor] : null;
+  const currentPrintArea = (product as any)?._mockupData?.printAreas?.[currentSide];
   const mockupUrl = currentMockup
     ? (currentSide === 'front' ? currentMockup.mockupFront : currentMockup.mockupBack)
     : null;
@@ -250,7 +253,7 @@ export default function ProductDetailPage() {
                 mockupUrl={mockupUrl}
                 side={currentSide}
                 productName={product.title}
-                printArea={currentMockup?.printArea}
+                printArea={productPrintAreas?.[currentSide]}
               />
             ) : (
               <div className="aspect-square bg-gray-100 rounded-xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-300">
