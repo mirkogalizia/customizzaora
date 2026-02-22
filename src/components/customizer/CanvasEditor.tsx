@@ -370,7 +370,10 @@ function MobileEditor({ mockupUrl, side, productName, printArea, displaySize }: 
 
 export function CanvasEditor({ mockupUrl, side, productName, printArea, printAreaBack }: CanvasEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [displaySize, setDisplaySize] = useState(LOGICAL);
+  // Inizializza subito con window.innerWidth per evitare flash desktop→mobile
+  const [displaySize, setDisplaySize] = useState(() =>
+    typeof window !== 'undefined' ? Math.min(window.innerWidth - 32, LOGICAL) : LOGICAL
+  );
   const canvasMapRef = useRef<Record<string, fabric.Canvas>>({});
   const isMobile = displaySize < 640;
 
