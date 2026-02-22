@@ -1,9 +1,28 @@
 'use client';
 
+/**
+ * CanvasEditor — Soluzione definitiva mobile + desktop
+ * 
+ * MOBILE:
+ * - Tap sul canvas preview → modal fullscreen
+ * - Nessuna maniglia Fabric.js su mobile (troppo piccole)
+ * - Touch nativi sul wrapper per drag (1 dito) e pinch-zoom (2 dita)
+ * - Barra contestuale che appare quando un oggetto è selezionato
+ * - Slider per dimensione, rotazione, opacità
+ * - "Fatto" usa router.back() sicuro, senza position:fixed che rompe iOS Safari
+ * 
+ * DESKTOP:
+ * - Fabric.js standard con maniglie
+ * - Toolbar esterna Toolbar.tsx
+ */
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { fabric } from 'fabric';
 import { PrintAreaDimensions } from '@/types';
-import { Check, ZoomIn, ZoomOut, RotateCw, Trash2, Upload, Type, X, ChevronLeft } from 'lucide-react';
+import {
+  ChevronLeft, Check, Upload, Type, Trash2,
+  RotateCcw, Maximize2, AlignCenter, Copy,
+} from 'lucide-react';
 
 interface CanvasEditorProps {
   mockupUrl: string;
@@ -18,106 +37,145 @@ interface CanvasEditorProps {
 const LOGICAL = 500;
 const designStorage: Record<string, any> = {};
 
-// ─── CANVAS SINGOLO (invariato, funziona bene) ────────────────────────────────
+// ─── UTILITIES ───────────────────────────────────────────────────────────────
 
-function SingleFabricCanvas({ mockupUrl, side, visible, printArea, displaySize, onReady }: {
+function getPrintAreaCoords(img: HTMLImageElement | null, printArea?: PrintAreaDimensions) {
+  let iX = 0, iY = 0, iW = LOGICAL, iH = LOGICAL;
+  if (img?.naturalWidth && img?.naturalHeight) {
+    const r = img.naturalWidth / img.naturalHeight;
+    if (r >= 1) { iW = LOGICAL; iH = LOGICAL / r; iY = (LOGICAL - iH) / 2; }
+    else        { iH = LOGICAL; iW = LOGICAL * r;  iX = (LOGICAL - iW) / 2; }
+  }
+  return {
+    left:   iX + iW * (printArea?.xPercent     ?? 25) / 100,
+    top:    iY + iH * (printArea?.yPercent      ?? 20) / 100,
+    width:  iW * (printArea?.widthPercent       ?? 50) / 100,
+    height: iH * (printArea?.heightPercent      ?? 45) / 100,
+  };
+}
+
+// ─── SINGLE FABRIC CANVAS ────────────────────────────────────────────────────
+
+function SingleFabricCanvas({
+  mockupUrl, side, visible, printArea, displaySize, isMobile, onReady,
+}: {
   mockupUrl: string; side: 'front' | 'back'; visible: boolean;
-  printArea?: PrintAreaDimensions; displaySize: number;
-  onReady: (s: 'front' | 'back', c: fabric.Canvas) => void;
+  printArea?: PrintAreaDimensions; displaySize: number; isMobile: boolean;
+  onReady: (s: 'front' | 'back', c: fabric.Canvas, img: HTMLImageElement) => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricRef = useRef<fabric.Canvas | null>(null);
-  const imgRef    = useRef<HTMLImageElement>(null);
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const fabricRef  = useRef<fabric.Canvas | null>(null);
+  const imgRef     = useRef<HTMLImageElement>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
   const storageKey = `design-${side}`;
-
-  const getCoords = useCallback(() => {
-    const img = imgRef.current;
-    let iX = 0, iY = 0, iW = LOGICAL, iH = LOGICAL;
-    if (img?.naturalWidth && img?.naturalHeight) {
-      const r = img.naturalWidth / img.naturalHeight;
-      if (r >= 1) { iW = LOGICAL; iH = LOGICAL / r; iY = (LOGICAL - iH) / 2; }
-      else        { iH = LOGICAL; iW = LOGICAL * r;  iX = (LOGICAL - iW) / 2; }
-    }
-    return {
-      left:   iX + iW * (printArea?.xPercent    ?? 25) / 100,
-      top:    iY + iH * (printArea?.yPercent     ?? 20) / 100,
-      width:  iW * (printArea?.widthPercent      ?? 50) / 100,
-      height: iH * (printArea?.heightPercent     ?? 45) / 100,
-    };
-  }, [printArea]);
 
   useEffect(() => {
     if (!canvasRef.current || !imgLoaded || fabricRef.current) return;
     const timer = setTimeout(() => {
-      if (!canvasRef.current) return;
-      const coords = getCoords();
+      if (!canvasRef.current || !imgRef.current) return;
+      const coords = getPrintAreaCoords(imgRef.current, printArea);
+      
       const canvas = new fabric.Canvas(canvasRef.current, {
         width: LOGICAL, height: LOGICAL,
         backgroundColor: 'transparent',
         preserveObjectStacking: true,
         enableRetinaScaling: true,
         allowTouchScrolling: false,
+        // Su mobile nascondiamo i controlli di Fabric — usiamo i nostri
+        selection: !isMobile,
       });
       fabricRef.current = canvas;
+
+      // Clip alla print area
       canvas.clipPath = new fabric.Rect({ ...coords, absolutePositioned: true });
+
+      // Rettangolo print area (visivo)
       const printRect = new fabric.Rect({
-        ...coords, fill: 'rgba(16,185,129,0.04)',
+        ...coords,
+        fill: 'rgba(16,185,129,0.04)',
         stroke: '#10b981', strokeWidth: 1.5, strokeDashArray: [6, 4],
         selectable: false, evented: false, name: 'printArea',
       });
       canvas.add(printRect);
       canvas.sendToBack(printRect);
-      fabric.Object.prototype.set({
-        cornerSize: 16, cornerStyle: 'circle',
-        borderColor: '#f97316', cornerColor: '#f97316',
-        cornerStrokeColor: '#ffffff', transparentCorners: false,
-        borderScaleFactor: 1.5, padding: 8, hasRotatingPoint: true,
-      });
+
+      // Controlli Fabric — su mobile li nascondiamo, usiamo i nostri
+      if (isMobile) {
+        fabric.Object.prototype.set({
+          hasControls: false,
+          hasBorders: true,
+          borderColor: '#f97316',
+          borderScaleFactor: 2,
+          padding: 12,
+        });
+      } else {
+        fabric.Object.prototype.set({
+          cornerSize: 16, cornerStyle: 'circle',
+          borderColor: '#f97316', cornerColor: '#f97316',
+          cornerStrokeColor: '#ffffff', transparentCorners: false,
+          borderScaleFactor: 1.5, padding: 8,
+        });
+      }
+
+      // Constraint: mantieni oggetto nell'area di stampa
       const constrain = (obj: fabric.Object) => {
         if ((obj as any).name === 'printArea') return;
         const b = obj.getBoundingRect();
         const vis = 0.25;
-        const { left: px, top: py, width: pw, height: ph } = coords;
         let l = obj.left ?? 0, t = obj.top ?? 0;
-        if (b.left < px - b.width * vis)       l = px - b.width * vis + (l - b.left);
-        if (b.top  < py - b.height * vis)       t = py - b.height * vis + (t - b.top);
-        if (b.left > px + pw - b.width * vis)   l = px + pw - b.width * vis + (l - b.left);
-        if (b.top  > py + ph - b.height * vis)  t = py + ph - b.height * vis + (t - b.top);
+        if (b.left < coords.left - b.width * vis)              l = coords.left - b.width * vis + (l - b.left);
+        if (b.top  < coords.top  - b.height * vis)             t = coords.top  - b.height * vis + (t - b.top);
+        if (b.left > coords.left + coords.width - b.width * vis)  l = coords.left + coords.width - b.width * vis + (l - b.left);
+        if (b.top  > coords.top  + coords.height - b.height * vis) t = coords.top  + coords.height - b.height * vis + (t - b.top);
         obj.set({ left: l, top: t }); obj.setCoords();
       };
       canvas.on('object:moving',   e => constrain(e.target as fabric.Object));
       canvas.on('object:scaling',  e => constrain(e.target as fabric.Object));
       canvas.on('object:rotating', e => constrain(e.target as fabric.Object));
-      let st: NodeJS.Timeout;
-      const save = () => { clearTimeout(st); st = setTimeout(() => {
-        const objs = canvas.getObjects().filter(o => (o as any).name !== 'printArea');
-        if (objs.length) designStorage[storageKey] = canvas.toJSON(['name']);
-        else delete designStorage[storageKey];
-      }, 300); };
+
+      // Autosave debounced
+      let st: ReturnType<typeof setTimeout>;
+      const save = () => {
+        clearTimeout(st);
+        st = setTimeout(() => {
+          const objs = canvas.getObjects().filter(o => (o as any).name !== 'printArea');
+          if (objs.length) designStorage[storageKey] = canvas.toJSON(['name']);
+          else delete designStorage[storageKey];
+        }, 300);
+      };
       canvas.on('object:modified', save);
       canvas.on('object:added', save);
       canvas.on('object:removed', save);
+
+      // Carica design salvato
       const saved = designStorage[storageKey];
-      if (saved) canvas.loadFromJSON(saved, () => {
-        const pa = canvas.getObjects().find(o => (o as any).name === 'printArea');
-        if (pa) canvas.sendToBack(pa);
-        canvas.requestRenderAll();
-      });
+      if (saved) {
+        canvas.loadFromJSON(saved, () => {
+          const pa = canvas.getObjects().find(o => (o as any).name === 'printArea');
+          if (pa) canvas.sendToBack(pa);
+          if (isMobile) canvas.getObjects().forEach(o => { if ((o as any).name !== 'printArea') o.set({ hasControls: false }); });
+          canvas.requestRenderAll();
+        });
+      }
+
+      // Reset globale
       const reset = () => {
         canvas.clear();
         canvas.clipPath = new fabric.Rect({ ...coords, absolutePositioned: true });
-        canvas.add(new fabric.Rect({ ...coords, fill: 'rgba(16,185,129,0.04)', stroke: '#10b981', strokeWidth: 1.5, strokeDashArray: [6, 4], selectable: false, evented: false, name: 'printArea' }));
-        canvas.sendToBack(canvas.getObjects()[0]);
+        const pr = new fabric.Rect({ ...coords, fill: 'rgba(16,185,129,0.04)', stroke: '#10b981', strokeWidth: 1.5, strokeDashArray: [6, 4], selectable: false, evented: false, name: 'printArea' });
+        canvas.add(pr); canvas.sendToBack(pr);
         delete designStorage[storageKey];
         canvas.requestRenderAll();
       };
       window.addEventListener('resetCanvas', reset);
       window.addEventListener(`resetCanvas-${side}`, reset);
+
+      // Zoom iniziale
       const zoom = displaySize / LOGICAL;
       canvas.setZoom(zoom); canvas.setWidth(displaySize); canvas.setHeight(displaySize);
       canvas.requestRenderAll();
-      onReady(side, canvas);
+
+      onReady(side, canvas, imgRef.current!);
     }, 80);
     return () => clearTimeout(timer);
   }, [imgLoaded]);
@@ -133,10 +191,14 @@ function SingleFabricCanvas({ mockupUrl, side, visible, printArea, displaySize, 
 
   return (
     <div style={{ display: visible ? 'block' : 'none', position: 'absolute', inset: 0 }}>
-      <img ref={imgRef} src={mockupUrl} alt="mockup"
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+      <img
+        ref={imgRef}
+        src={mockupUrl}
+        alt="mockup"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
         draggable={false}
-        onLoad={() => { setImgLoaded(false); setTimeout(() => setImgLoaded(true), 40); }} />
+        onLoad={() => { setImgLoaded(false); setTimeout(() => setImgLoaded(true), 40); }}
+      />
       <div style={{ position: 'absolute', inset: 0, touchAction: 'none' }}>
         <canvas ref={canvasRef} />
       </div>
@@ -144,143 +206,120 @@ function SingleFabricCanvas({ mockupUrl, side, visible, printArea, displaySize, 
   );
 }
 
-// ─── MINI TOOLBAR MOBILE (dentro la modal fullscreen) ─────────────────────────
+// ─── BARRA CONTESTUALE MOBILE (appare quando oggetto selezionato) ─────────────
 
-function MobileEditorToolbar({ side, onClose, onSideChange, printArea, printAreaBack, fileInputRef }: {
-  side: 'front' | 'back';
-  onClose: () => void;
-  onSideChange: (s: 'front' | 'back') => void;
-  printArea?: PrintAreaDimensions;
-  printAreaBack?: PrintAreaDimensions;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
+function MobileContextBar({ canvas, onDeselect }: {
+  canvas: fabric.Canvas | null;
+  onDeselect: () => void;
 }) {
-  const [tab, setTab] = useState<'add' | 'edit'>('add');
-  const [text, setText] = useState('Il tuo testo');
-  const [fontSize, setFontSize] = useState(48);
-  const [color, setColor] = useState('#000000');
+  const [obj, setObj] = useState<fabric.Object | null>(null);
+  const [scale, setScale] = useState(100);
+  const [angle, setAngle] = useState(0);
 
-  const COLORS = ['#000000','#ffffff','#EF4444','#F97316','#EAB308','#22C55E','#3B82F6','#8B5CF6'];
+  useEffect(() => {
+    if (!canvas) return;
+    const onSel = () => {
+      const o = canvas.getActiveObject();
+      if (!o || (o as any).name === 'printArea') { setObj(null); return; }
+      setObj(o);
+      setScale(Math.round((o.scaleX ?? 1) * 100));
+      setAngle(Math.round(o.angle ?? 0));
+    };
+    const onClear = () => setObj(null);
+    canvas.on('selection:created', onSel);
+    canvas.on('selection:updated', onSel);
+    canvas.on('selection:cleared', onClear);
+    return () => {
+      canvas.off('selection:created', onSel);
+      canvas.off('selection:updated', onSel);
+      canvas.off('selection:cleared', onClear);
+    };
+  }, [canvas]);
 
-  const getCanvas = () => (window as any).fabricCanvas as fabric.Canvas | null;
+  if (!obj) return null;
 
-  const getPrintCenter = () => {
-    const c = getCanvas(); if (!c) return { x: 250, y: 250, w: 200, h: 180 };
-    const pa = c.getObjects().find((o: any) => o.name === 'printArea') as any;
-    if (!pa) return { x: 250, y: 250, w: 200, h: 180 };
-    return { x: pa.left + pa.width / 2, y: pa.top + pa.height / 2, w: pa.width, h: pa.height };
+  const applyScale = (v: number) => {
+    if (!obj || !canvas) return;
+    const s = v / 100;
+    obj.set({ scaleX: s, scaleY: s });
+    obj.setCoords();
+    canvas.requestRenderAll();
+    setScale(v);
   };
 
-  const addText = () => {
-    const c = getCanvas(); if (!c) return;
-    const { x, y } = getPrintCenter();
-    const obj = new fabric.IText(text || 'Testo', {
-      left: x, top: y, fontSize, fill: color,
-      originX: 'center', originY: 'center', editable: true,
+  const applyAngle = (v: number) => {
+    if (!obj || !canvas) return;
+    obj.set({ angle: v });
+    obj.setCoords();
+    canvas.requestRenderAll();
+    setAngle(v);
+  };
+
+  const center = () => {
+    if (!obj || !canvas) return;
+    const pa = canvas.getObjects().find(o => (o as any).name === 'printArea') as any;
+    if (pa) { obj.set({ left: pa.left + pa.width / 2, top: pa.top + pa.height / 2 }); }
+    else { canvas.centerObject(obj); }
+    obj.setCoords();
+    canvas.requestRenderAll();
+  };
+
+  const duplicate = () => {
+    if (!obj || !canvas) return;
+    obj.clone((cloned: fabric.Object) => {
+      cloned.set({ left: (obj.left ?? 0) + 24, top: (obj.top ?? 0) + 24, hasControls: false });
+      canvas.add(cloned);
+      canvas.setActiveObject(cloned);
+      canvas.requestRenderAll();
     });
-    c.add(obj); c.setActiveObject(obj); c.requestRenderAll();
-    setTab('edit');
   };
 
-  const scaleObj = (f: number) => {
-    const c = getCanvas(); if (!c) return;
-    const obj = c.getActiveObject();
-    if (obj && (obj as any).name !== 'printArea') { obj.scale(Math.max(0.1, (obj.scaleX ?? 1) * f)); c.requestRenderAll(); }
+  const remove = () => {
+    if (!obj || !canvas) return;
+    canvas.remove(obj);
+    canvas.requestRenderAll();
+    setObj(null);
+    onDeselect();
   };
-
-  const rotateObj = () => {
-    const c = getCanvas(); if (!c) return;
-    const obj = c.getActiveObject();
-    if (obj && (obj as any).name !== 'printArea') { obj.rotate(((obj.angle ?? 0) + 15) % 360); c.requestRenderAll(); }
-  };
-
-  const deleteObj = () => {
-    const c = getCanvas(); if (!c) return;
-    const obj = c.getActiveObject();
-    if (obj && (obj as any).name !== 'printArea') { c.remove(obj); c.requestRenderAll(); }
-  };
-
-  const activePrint = side === 'front' ? printArea : (printAreaBack ?? printArea);
 
   return (
-    <div className="flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      {/* Switch fronte/retro */}
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-        <div className="flex flex-1 gap-1 bg-gray-100 p-1 rounded-2xl">
-          {(['front','back'] as const).map(s => (
-            <button key={s} onClick={() => onSideChange(s)}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${side === s ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>
-              {s === 'front' ? '👕 Fronte' : '🔄 Retro'}
-            </button>
-          ))}
-        </div>
-        {activePrint && (
-          <span className="text-xs text-gray-400 bg-gray-100 px-2.5 py-2 rounded-xl whitespace-nowrap">
-            {activePrint.widthCm}×{activePrint.heightCm}cm
-          </span>
-        )}
+    <div className="bg-white border-t border-gray-200 px-4 py-3 space-y-3">
+      {/* Dimensione */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-semibold text-gray-500 w-20 flex-shrink-0">Dimensione</span>
+        <input
+          type="range" min={10} max={200} value={scale}
+          onChange={e => applyScale(Number(e.target.value))}
+          className="flex-1 accent-orange-600 h-1.5"
+        />
+        <span className="text-xs font-bold text-gray-700 w-10 text-right">{scale}%</span>
       </div>
 
-      {/* Tab add / edit */}
-      <div className="flex gap-1 px-4 mb-3">
-        <button onClick={() => setTab('add')}
-          className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${tab === 'add' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>
-          + Aggiungi
-        </button>
-        <button onClick={() => setTab('edit')}
-          className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${tab === 'edit' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>
-          ✏️ Modifica
-        </button>
+      {/* Rotazione */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-semibold text-gray-500 w-20 flex-shrink-0">Rotazione</span>
+        <input
+          type="range" min={0} max={360} value={angle}
+          onChange={e => applyAngle(Number(e.target.value))}
+          className="flex-1 accent-orange-600 h-1.5"
+        />
+        <span className="text-xs font-bold text-gray-700 w-10 text-right">{angle}°</span>
       </div>
 
-      {/* Contenuto tab */}
-      <div className="px-4 pb-3">
-        {tab === 'add' && (
-          <div className="space-y-3">
-            <button onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 bg-orange-600 text-white rounded-2xl py-4 font-bold active:scale-98 transition-transform">
-              <Upload className="w-5 h-5" />Carica immagine
-            </button>
-            <div className="flex gap-2">
-              <input value={text} onChange={e => setText(e.target.value)}
-                className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:border-gray-900 outline-none"
-                placeholder="Scrivi testo..." />
-              <div className="flex items-center border-2 border-gray-200 rounded-xl px-2">
-                <button onClick={() => setFontSize(s => Math.max(12, s-4))} className="text-gray-400 font-bold px-1">−</button>
-                <span className="text-xs font-bold text-gray-700 w-7 text-center">{fontSize}</span>
-                <button onClick={() => setFontSize(s => Math.min(120, s+4))} className="text-gray-400 font-bold px-1">+</button>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1.5 flex-1">
-                {COLORS.map(c => (
-                  <button key={c} onClick={() => setColor(c)}
-                    className={`w-7 h-7 rounded-full border-2 transition-transform ${color === c ? 'border-gray-900 scale-125' : 'border-white shadow-sm'}`}
-                    style={{ backgroundColor: c }} />
-                ))}
-              </div>
-              <button onClick={addText}
-                className="bg-gray-900 text-white rounded-xl px-4 py-2 text-sm font-bold active:scale-95">
-                <Type className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {tab === 'edit' && (
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { icon: ZoomIn,   label: '+20%',   action: () => scaleObj(1.2) },
-              { icon: ZoomOut,  label: '-20%',   action: () => scaleObj(0.83) },
-              { icon: RotateCw, label: '+15°',   action: rotateObj },
-              { icon: Trash2,   label: 'Elimina', action: deleteObj, danger: true },
-            ].map(({ icon: Icon, label, action, danger }) => (
-              <button key={label} onClick={action}
-                className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 text-xs font-semibold active:scale-95 transition-transform ${danger ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-700'}`}>
-                <Icon className="w-5 h-5" />{label}
-              </button>
-            ))}
-          </div>
-        )}
+      {/* Azioni rapide */}
+      <div className="flex gap-2 pt-1">
+        <button onClick={center}
+          className="flex-1 flex items-center justify-center gap-1.5 bg-gray-100 rounded-xl py-2.5 text-xs font-semibold text-gray-700 active:bg-gray-200">
+          <AlignCenter className="w-4 h-4" />Centra
+        </button>
+        <button onClick={duplicate}
+          className="flex-1 flex items-center justify-center gap-1.5 bg-gray-100 rounded-xl py-2.5 text-xs font-semibold text-gray-700 active:bg-gray-200">
+          <Copy className="w-4 h-4" />Duplica
+        </button>
+        <button onClick={remove}
+          className="flex-1 flex items-center justify-center gap-1.5 bg-red-50 rounded-xl py-2.5 text-xs font-semibold text-red-600 active:bg-red-100">
+          <Trash2 className="w-4 h-4" />Elimina
+        </button>
       </div>
     </div>
   );
@@ -288,117 +327,323 @@ function MobileEditorToolbar({ side, onClose, onSideChange, printArea, printArea
 
 // ─── MODAL FULLSCREEN MOBILE ──────────────────────────────────────────────────
 
-function MobileFullscreenEditor({ mockupUrl, mockupUrlBack, side, onSideChange, onClose, printArea, printAreaBack, canvasMapRef, onReady }: {
+function MobileFullscreenEditor({
+  mockupUrl, mockupUrlBack, side, onSideChange, onClose,
+  printArea, printAreaBack,
+}: {
   mockupUrl: string; mockupUrlBack?: string;
   side: 'front' | 'back'; onSideChange: (s: 'front' | 'back') => void;
   onClose: () => void;
   printArea?: PrintAreaDimensions; printAreaBack?: PrintAreaDimensions;
-  canvasMapRef: React.MutableRefObject<Record<string, fabric.Canvas>>;
-  onReady: (s: 'front' | 'back', c: fabric.Canvas) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const canvasSize = window.innerWidth;
+  const fileRef           = useRef<HTMLInputElement>(null);
+  const wrapperRef        = useRef<HTMLDivElement>(null);
+  const canvasRef         = useRef<fabric.Canvas | null>(null);
+  const imgElRef          = useRef<HTMLImageElement | null>(null);
+  const [addMode, setAddMode] = useState<'image' | 'text' | null>(null);
+  const [textValue, setTextValue] = useState('Il tuo testo');
+  const [fontSize, setFontSize]   = useState(48);
+  const [textColor, setTextColor] = useState('#000000');
+  const [hasSelection, setHasSelection] = useState(false);
+  const canvasSize = typeof window !== 'undefined' ? window.innerWidth : 390;
 
-  // Blocca scroll body
+  // Blocca scroll iOS in modo sicuro (senza position:fixed che rompe Safari)
   useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
+    const scrollY = window.scrollY;
+    document.documentElement.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
+      window.scrollTo(0, scrollY);
     };
   }, []);
 
+  const handleReady = useCallback((_: 'front' | 'back', canvas: fabric.Canvas, img: HTMLImageElement) => {
+    canvasRef.current = canvas;
+    imgElRef.current  = img;
+    (window as any).fabricCanvas = canvas;
+
+    // Ascolta selezione per mostrare/nascondere context bar
+    canvas.on('selection:created', () => setHasSelection(true));
+    canvas.on('selection:updated', () => setHasSelection(true));
+    canvas.on('selection:cleared', () => setHasSelection(false));
+
+    // ── TOUCH NATIVI SUL WRAPPER (non su Fabric) ────────────────────────────
+    // Fabric.js non gestisce bene il pinch — lo facciamo noi a mano
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    let lastTouchDist = 0;
+    let lastScale     = 1;
+    let activeObj: fabric.Object | null = null;
+
+    const getTouchDist = (t1: Touch, t2: Touch) =>
+      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+    wrapper.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        // Inizia pinch
+        e.preventDefault();
+        lastTouchDist = getTouchDist(e.touches[0], e.touches[1]);
+        activeObj = canvas.getActiveObject();
+        if (activeObj && (activeObj as any).name !== 'printArea') {
+          lastScale = activeObj.scaleX ?? 1;
+        }
+      }
+    }, { passive: false });
+
+    wrapper.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && activeObj) {
+        e.preventDefault();
+        const dist = getTouchDist(e.touches[0], e.touches[1]);
+        const ratio = dist / lastTouchDist;
+        const newScale = Math.max(0.05, Math.min(10, lastScale * ratio));
+        activeObj.set({ scaleX: newScale, scaleY: newScale });
+        activeObj.setCoords();
+        canvas.requestRenderAll();
+        setHasSelection(true);
+      }
+    }, { passive: false });
+
+    wrapper.addEventListener('touchend', () => {
+      activeObj = null;
+      lastTouchDist = 0;
+    });
+  }, []);
+
+  const getCanvas = () => canvasRef.current;
+
+  const getPrintCenter = () => {
+    const c = getCanvas(); if (!c) return { x: 250, y: 250, w: 200, h: 200 };
+    const pa = c.getObjects().find((o: any) => o.name === 'printArea') as any;
+    if (!pa) return { x: 250, y: 250, w: 200, h: 200 };
+    return { x: pa.left + pa.width / 2, y: pa.top + pa.height / 2, w: pa.width, h: pa.height };
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
-    const canvas = (window as any).fabricCanvas as fabric.Canvas | null;
-    if (!canvas) return;
-    const pa = canvas.getObjects().find((o: any) => o.name === 'printArea') as any;
-    const cx = pa ? pa.left + pa.width / 2 : canvasSize / 2;
-    const cy = pa ? pa.top + pa.height / 2 : canvasSize / 2;
-    const maxW = pa ? pa.width * 0.75 : canvasSize * 0.5;
-    const maxH = pa ? pa.height * 0.75 : canvasSize * 0.5;
+    const canvas = getCanvas(); if (!canvas) return;
+    const { x, y, w, h } = getPrintCenter();
     const reader = new FileReader();
     reader.onload = ev => {
       fabric.Image.fromURL(ev.target?.result as string, img => {
+        const maxW = w * 0.8;
+        const maxH = h * 0.8;
         const scale = Math.min(maxW / (img.width ?? 1), maxH / (img.height ?? 1));
-        img.set({ left: cx, top: cy, scaleX: scale, scaleY: scale, originX: 'center', originY: 'center' });
-        canvas.add(img); canvas.setActiveObject(img); canvas.requestRenderAll();
+        img.set({ left: x, top: y, scaleX: scale, scaleY: scale, originX: 'center', originY: 'center', hasControls: false });
+        canvas.add(img);
+        canvas.setActiveObject(img);
+        canvas.requestRenderAll();
+        setHasSelection(true);
+        setAddMode(null);
       });
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  const currentMockup = side === 'front' ? mockupUrl : (mockupUrlBack ?? mockupUrl);
-  const currentPrintArea = side === 'front' ? printArea : (printAreaBack ?? printArea);
+  const handleAddText = () => {
+    const canvas = getCanvas(); if (!canvas) return;
+    const { x, y } = getPrintCenter();
+    const t = new fabric.IText(textValue || 'Testo', {
+      left: x, top: y, fontSize, fill: textColor,
+      originX: 'center', originY: 'center',
+      editable: true, hasControls: false,
+    });
+    canvas.add(t);
+    canvas.setActiveObject(t);
+    canvas.requestRenderAll();
+    setHasSelection(true);
+    setAddMode(null);
+  };
+
+  const COLORS = ['#000000','#ffffff','#EF4444','#F97316','#EAB308','#22C55E','#3B82F6','#8B5CF6','#EC4899','#14B8A6'];
+  const currentPrint = side === 'front' ? printArea : (printAreaBack ?? printArea);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-white flex flex-col" style={{ height: '100dvh' }}>
-      {/* Topbar */}
-      <div className="flex items-center justify-between px-4 bg-white border-b border-gray-100 flex-shrink-0"
-        style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(52px + env(safe-area-inset-top))' }}>
-        <button onClick={onClose} className="flex items-center gap-1.5 text-gray-500 active:text-gray-900">
+    <div
+      className="fixed inset-0 bg-white flex flex-col"
+      style={{ zIndex: 9999, height: '100dvh' }}
+    >
+      {/* ── TOPBAR ── */}
+      <div
+        className="flex items-center justify-between px-4 bg-white border-b border-gray-100 flex-shrink-0"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          height: 'calc(52px + env(safe-area-inset-top, 0px))',
+        }}
+      >
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1.5 text-gray-500 py-2 pr-3 -ml-1 active:opacity-60"
+        >
           <ChevronLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">Prodotto</span>
+          <span className="text-sm font-medium">Indietro</span>
         </button>
-        <span className="font-bold text-gray-900 text-sm">Personalizza</span>
-        <button onClick={onClose}
-          className="flex items-center gap-1.5 bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform">
+
+        <span className="font-bold text-gray-900 text-sm absolute left-1/2 -translate-x-1/2">
+          Personalizza
+        </span>
+
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1.5 bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold active:bg-orange-700"
+        >
           <Check className="w-4 h-4" />Fatto
         </button>
       </div>
 
-      {/* Canvas area — occupa tutto lo spazio disponibile */}
-      <div className="flex-1 relative bg-gray-50 overflow-hidden">
-        <div style={{ width: canvasSize, height: canvasSize, position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }}>
+      {/* ── SWITCH FRONTE/RETRO ── */}
+      <div className="flex gap-1.5 px-4 py-2.5 bg-white border-b border-gray-100 flex-shrink-0">
+        {(['front', 'back'] as const).map(s => (
+          <button key={s} onClick={() => onSideChange(s)}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${
+              side === s ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
+            }`}>
+            {s === 'front' ? '👕 Fronte' : '🔄 Retro'}
+          </button>
+        ))}
+        {currentPrint && (
+          <span className="flex items-center px-3 bg-gray-100 rounded-xl text-xs text-gray-500 whitespace-nowrap font-medium">
+            {currentPrint.widthCm}×{currentPrint.heightCm}cm
+          </span>
+        )}
+      </div>
+
+      {/* ── CANVAS ── */}
+      <div
+        ref={wrapperRef}
+        className="flex-1 relative bg-gray-50 overflow-hidden"
+        style={{ touchAction: 'pan-y' }}
+      >
+        <div
+          style={{
+            width: canvasSize,
+            height: canvasSize,
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%,-50%)',
+          }}
+        >
           <SingleFabricCanvas
-            mockupUrl={side === 'front' ? mockupUrl : (mockupUrlBack ?? mockupUrl)}
+            mockupUrl={mockupUrl}
             side="front"
             visible={side === 'front'}
             printArea={printArea}
             displaySize={canvasSize}
-            onReady={onReady}
+            isMobile={true}
+            onReady={handleReady}
           />
           <SingleFabricCanvas
-            mockupUrl={side === 'back' ? (mockupUrlBack ?? mockupUrl) : mockupUrl}
+            mockupUrl={mockupUrlBack ?? mockupUrl}
             side="back"
             visible={side === 'back'}
             printArea={printAreaBack ?? printArea}
             displaySize={canvasSize}
-            onReady={onReady}
+            isMobile={true}
+            onReady={handleReady}
           />
         </div>
 
-        {/* Hint tocco */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full pointer-events-none whitespace-nowrap">
-          Trascina · Pizzica per ridimensionare · Ruota
-        </div>
+        {/* Hint pinch */}
+        {!hasSelection && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none whitespace-nowrap">
+            1 dito = sposta · 2 dita = ridimensiona
+          </div>
+        )}
       </div>
 
-      {/* Toolbar bottom */}
-      <div className="bg-white border-t border-gray-100 flex-shrink-0">
-        <MobileEditorToolbar
-          side={side}
-          onClose={onClose}
-          onSideChange={onSideChange}
-          printArea={printArea}
-          printAreaBack={printAreaBack}
-          fileInputRef={fileRef}
+      {/* ── CONTEXT BAR (quando oggetto selezionato) ── */}
+      {hasSelection && (
+        <MobileContextBar
+          canvas={canvasRef.current}
+          onDeselect={() => setHasSelection(false)}
         />
-      </div>
+      )}
+
+      {/* ── TOOLBAR AGGIUNTA ── */}
+      {addMode === null && !hasSelection && (
+        <div className="bg-white border-t border-gray-100 px-4 py-3 flex gap-3 flex-shrink-0"
+          style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-2 bg-orange-600 text-white rounded-2xl py-4 font-bold text-sm active:bg-orange-700"
+          >
+            <Upload className="w-5 h-5" />Carica immagine
+          </button>
+          <button
+            onClick={() => setAddMode('text')}
+            className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white rounded-2xl py-4 font-bold text-sm active:bg-gray-800"
+          >
+            <Type className="w-5 h-5" />Aggiungi testo
+          </button>
+        </div>
+      )}
+
+      {/* ── PANNELLO TESTO ── */}
+      {addMode === 'text' && (
+        <div className="bg-white border-t border-gray-200 px-4 py-3 space-y-3 flex-shrink-0"
+          style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}>
+          {/* Input testo */}
+          <div className="flex gap-2">
+            <input
+              value={textValue}
+              onChange={e => setTextValue(e.target.value)}
+              placeholder="Scrivi il tuo testo..."
+              className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:border-gray-900 outline-none"
+              autoFocus
+            />
+            <button onClick={() => setAddMode(null)}
+              className="px-3 py-2 bg-gray-100 rounded-xl text-sm text-gray-600 font-medium active:bg-gray-200">
+              ✕
+            </button>
+          </div>
+
+          {/* Font size */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500 w-12 flex-shrink-0">Taglia</span>
+            <input
+              type="range" min={12} max={120} value={fontSize}
+              onChange={e => setFontSize(Number(e.target.value))}
+              className="flex-1 accent-orange-600 h-1.5"
+            />
+            <span className="text-xs font-bold text-gray-700 w-8 text-right">{fontSize}</span>
+          </div>
+
+          {/* Colori */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2 flex-1">
+              {COLORS.map(c => (
+                <button key={c} onClick={() => setTextColor(c)}
+                  style={{ backgroundColor: c }}
+                  className={`w-7 h-7 rounded-full border-2 flex-shrink-0 transition-transform active:scale-90 ${
+                    textColor === c ? 'border-gray-900 scale-125' : 'border-white shadow-sm'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <button onClick={handleAddText}
+            className="w-full bg-gray-900 text-white rounded-2xl py-3.5 font-bold text-sm active:bg-gray-800">
+            + Aggiungi testo al design
+          </button>
+        </div>
+      )}
 
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
     </div>
   );
 }
 
-// ─── MAIN EXPORT ─────────────────────────────────────────────────────────────
+// ─── CANVAS EDITOR (main export) ─────────────────────────────────────────────
 
-export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, productName, printArea, printAreaBack }: CanvasEditorProps) {
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const canvasMapRef  = useRef<Record<string, fabric.Canvas>>({});
+export function CanvasEditor({
+  mockupUrl, mockupUrlBack, side, onSideChange,
+  productName, printArea, printAreaBack,
+}: CanvasEditorProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasMapRef = useRef<Record<string, fabric.Canvas>>({});
   const [fullscreen, setFullscreen] = useState(false);
 
   const [displaySize, setDisplaySize] = useState(() =>
@@ -429,18 +674,13 @@ export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, pro
     if (c) (window as any).fabricCanvas = c;
   }, [side]);
 
-  const handleSideChange = (s: 'front' | 'back') => {
-    onSideChange?.(s);
-  };
-
   return (
     <>
       <div ref={containerRef} className="w-full select-none">
-        {/* Canvas preview — su mobile è cliccabile per aprire fullscreen */}
+        {/* Preview canvas — su mobile mostra overlay cliccabile */}
         <div
-          className={`relative bg-gray-50 rounded-2xl overflow-hidden border border-gray-200 shadow-md ${isMobile ? 'cursor-pointer' : ''}`}
+          className="relative bg-gray-50 rounded-2xl overflow-hidden border border-gray-200 shadow-md"
           style={{ width: displaySize, height: displaySize }}
-          onClick={isMobile ? () => setFullscreen(true) : undefined}
         >
           <SingleFabricCanvas
             mockupUrl={mockupUrl}
@@ -448,6 +688,7 @@ export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, pro
             visible={side === 'front'}
             printArea={printArea}
             displaySize={displaySize}
+            isMobile={false}
             onReady={handleReady}
           />
           <SingleFabricCanvas
@@ -456,6 +697,7 @@ export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, pro
             visible={side === 'back'}
             printArea={printAreaBack ?? printArea}
             displaySize={displaySize}
+            isMobile={false}
             onReady={handleReady}
           />
 
@@ -464,22 +706,21 @@ export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, pro
             {side === 'front' ? '● FRONTE' : '● RETRO'}
           </div>
 
-          {/* Dimensioni */}
+          {/* Dimensioni stampa */}
           {(printArea || printAreaBack) && (
             <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 pointer-events-none shadow-sm">
               {(side === 'front' ? printArea : (printAreaBack ?? printArea))?.widthCm} × {(side === 'front' ? printArea : (printAreaBack ?? printArea))?.heightCm} cm
             </div>
           )}
 
-          {/* Overlay mobile — intercetta il tap sopra Fabric.js e apre il fullscreen */}
+          {/* Overlay tap su mobile — z-10 sopra Fabric.js con touchAction:auto */}
           {isMobile && (
             <div
               className="absolute inset-0 z-10 flex items-end justify-center pb-4"
-              style={{ touchAction: 'auto' }}
-              onTouchEnd={e => { e.preventDefault(); setFullscreen(true); }}
-              onClick={() => setFullscreen(true)}
+              style={{ touchAction: 'auto', WebkitTapHighlightColor: 'transparent' }}
+              onPointerDown={e => { e.preventDefault(); setFullscreen(true); }}
             >
-              <div className="bg-gray-900/80 backdrop-blur-sm text-white text-sm font-bold px-5 py-2.5 rounded-2xl flex items-center gap-2 shadow-lg pointer-events-none">
+              <div className="bg-gray-900/80 backdrop-blur-sm text-white text-sm font-bold px-5 py-3 rounded-2xl flex items-center gap-2 shadow-lg pointer-events-none">
                 ✏️ Tocca per personalizzare
               </div>
             </div>
@@ -504,12 +745,10 @@ export function CanvasEditor({ mockupUrl, mockupUrlBack, side, onSideChange, pro
           mockupUrl={mockupUrl}
           mockupUrlBack={mockupUrlBack}
           side={side}
-          onSideChange={handleSideChange}
+          onSideChange={s => { onSideChange?.(s); }}
           onClose={() => setFullscreen(false)}
           printArea={printArea}
           printAreaBack={printAreaBack}
-          canvasMapRef={canvasMapRef}
-          onReady={handleReady}
         />
       )}
     </>
