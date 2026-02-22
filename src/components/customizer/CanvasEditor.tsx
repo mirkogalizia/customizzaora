@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { fabric } from 'fabric';
 import { PrintAreaDimensions } from '@/types';
 
@@ -11,168 +11,112 @@ interface CanvasEditorProps {
   printArea?: PrintAreaDimensions;
 }
 
-const ORIGINAL_CANVAS_SIZE = 500;
+// Spazio logico fisso — le coordinate sono SEMPRE relative a 500x500
+// Il canvas viene scalato via zoom, mai ridimensionato
+const LOGICAL = 500;
+
+// Design salvato separatamente per fronte e retro
 const designStorage: Record<string, any> = {};
 
 export function CanvasEditor({ mockupUrl, side, productName, printArea }: CanvasEditorProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
+  const fabricRef    = useRef<fabric.Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
-  const [canvasSize, setCanvasSize] = useState(ORIGINAL_CANVAS_SIZE);
-  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const imgRef       = useRef<HTMLImageElement>(null);
+  const [imgLoaded, setImgLoaded]     = useState(false);
+  const [displaySize, setDisplaySize] = useState(LOGICAL);
 
   const storageKey = `design-${side}`;
 
-  useEffect(() => {
-    const calculateSize = () => {
-      if (!containerRef.current) return;
-      
-      const containerWidth = containerRef.current.offsetWidth;
-      const isMobile = window.innerWidth < 768;
-      // Su mobile sottrai padding per evitare overflow
-      const maxSize = isMobile 
-        ? Math.min(containerWidth - 32, ORIGINAL_CANVAS_SIZE) 
-        : Math.min(containerWidth, ORIGINAL_CANVAS_SIZE);
-      
-      setCanvasSize(maxSize);
-      console.log(`📱 Canvas Size: ${maxSize}px (Mobile: ${isMobile})`);
-    };
-
-    calculateSize();
-    
-    const handleResize = () => {
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-      resizeTimeoutRef.current = setTimeout(calculateSize, 150);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-    };
+  // ── 1. Misura container e aggiorna displaySize ────────────────────────────
+  const updateSize = useCallback(() => {
+    if (!containerRef.current) return;
+    const w = containerRef.current.offsetWidth;
+    setDisplaySize(Math.min(w, LOGICAL));
   }, []);
 
-  const getImageBounds = () => {
-    if (!imgRef.current) return null;
-    
-    const img = imgRef.current;
-    const imgNaturalRatio = img.naturalWidth / img.naturalHeight;
-    
-    let imgWidth: number, imgHeight: number, imgX: number, imgY: number;
-    
-    if (imgNaturalRatio > 1) {
-      imgWidth = ORIGINAL_CANVAS_SIZE;
-      imgHeight = ORIGINAL_CANVAS_SIZE / imgNaturalRatio;
-      imgX = 0;
-      imgY = (ORIGINAL_CANVAS_SIZE - imgHeight) / 2;
-    } else {
-      imgHeight = ORIGINAL_CANVAS_SIZE;
-      imgWidth = ORIGINAL_CANVAS_SIZE * imgNaturalRatio;
-      imgX = (ORIGINAL_CANVAS_SIZE - imgWidth) / 2;
-      imgY = 0;
-    }
-    
-    return { x: imgX, y: imgY, width: imgWidth, height: imgHeight };
-  };
-
-  const saveCurrentState = (canvas: fabric.Canvas) => {
-    try {
-      const objects = canvas.getObjects().filter(obj => (obj as any).name !== 'printArea');
-      if (objects.length > 0) {
-        const state = canvas.toJSON(['name']);
-        designStorage[storageKey] = state;
-        console.log(`💾 Salvato design per ${side}:`, objects.length, 'oggetti');
-      } else {
-        delete designStorage[storageKey];
-        console.log(`🗑️ Rimosso salvataggio vuoto per ${side}`);
-      }
-    } catch (error) {
-      console.error('Error saving state:', error);
-    }
-  };
-
-  const loadSavedState = (canvas: fabric.Canvas) => {
-    const savedState = designStorage[storageKey];
-    if (savedState) {
-      try {
-        console.log(`📂 Caricamento design per ${side}...`);
-        canvas.loadFromJSON(savedState, () => {
-          const printAreaRect = canvas.getObjects().find(obj => (obj as any).name === 'printArea');
-          if (printAreaRect) {
-            canvas.sendToBack(printAreaRect);
-          }
-          canvas.requestRenderAll();
-          console.log(`✅ Design ${side} caricato!`);
-        });
-      } catch (error) {
-        console.error('Error loading state:', error);
-      }
-    } else {
-      console.log(`📭 Nessun design salvato per ${side}`);
-    }
-  };
-
   useEffect(() => {
-    if (!canvasRef.current || !containerRef.current || !imgLoaded || canvasSize === 0) return;
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [updateSize]);
 
-    if (fabricCanvasRef.current) {
-      saveCurrentState(fabricCanvasRef.current);
+  // ── 2. Calcola coordinate area di stampa (sempre in spazio 500x500) ───────
+  const getPrintCoords = useCallback(() => {
+    // I valori % sono relativi all'IMMAGINE, non al canvas intero
+    // L'immagine è renderizzata con object-contain nel div 500x500
+    // Quindi dobbiamo trovare i bounds reali dell'immagine nel canvas
+    const img = imgRef.current;
+    let imgX = 0, imgY = 0, imgW = LOGICAL, imgH = LOGICAL;
+
+    if (img && img.naturalWidth && img.naturalHeight) {
+      const ratio = img.naturalWidth / img.naturalHeight;
+      if (ratio > 1) {
+        imgW = LOGICAL;
+        imgH = LOGICAL / ratio;
+        imgY = (LOGICAL - imgH) / 2;
+      } else {
+        imgH = LOGICAL;
+        imgW = LOGICAL * ratio;
+        imgX = (LOGICAL - imgW) / 2;
+      }
     }
 
-    const initCanvas = () => {
-      const imgBounds = getImageBounds();
-      if (!imgBounds) return;
+    const xP = printArea?.xPercent   ?? 25;
+    const yP = printArea?.yPercent   ?? 20;
+    const wP = printArea?.widthPercent  ?? 50;
+    const hP = printArea?.heightPercent ?? 45;
 
-      // 🎯 USA i valori esatti dal tuo debug
-      const xPercent = printArea?.xPercent || 33.7;
-      const yPercent = printArea?.yPercent || 39.1;
-      const widthPercent = printArea?.widthPercent || 32.6;
-      const heightPercent = printArea?.heightPercent || 41.4;
+    return {
+      left:   imgX + imgW * xP / 100,
+      top:    imgY + imgH * yP / 100,
+      width:  imgW * wP / 100,
+      height: imgH * hP / 100,
+    };
+  }, [printArea]);
 
-      const printX = imgBounds.x + (imgBounds.width * xPercent / 100);
-      const printY = imgBounds.y + (imgBounds.height * yPercent / 100);
-      const printWidth = imgBounds.width * widthPercent / 100;
-      const printHeight = imgBounds.height * heightPercent / 100;
+  // ── 3. Init/reinit canvas quando cambia side, printArea o immagine ────────
+  useEffect(() => {
+    if (!canvasRef.current || !imgLoaded) return;
 
-      console.log('🎨 Canvas Setup:', {
-        canvasSize,
-        imgBounds,
-        printArea: { printX, printY, printWidth, printHeight },
-        percentages: { xPercent, yPercent, widthPercent, heightPercent }
-      });
+    // Salva stato prima di distruggere
+    if (fabricRef.current) {
+      const objs = fabricRef.current.getObjects().filter(o => (o as any).name !== 'printArea');
+      if (objs.length > 0) designStorage[storageKey] = fabricRef.current.toJSON(['name']);
+      else delete designStorage[storageKey];
+      fabricRef.current.dispose();
+      fabricRef.current = null;
+    }
 
-      const canvas = new fabric.Canvas(canvasRef.current!, {
-        width: ORIGINAL_CANVAS_SIZE,
-        height: ORIGINAL_CANVAS_SIZE,
+    // Piccolo delay per assicurarsi che l'immagine abbia le dimensioni naturali
+    const timer = setTimeout(() => {
+      if (!canvasRef.current) return;
+
+      const coords = getPrintCoords();
+
+      const canvas = new fabric.Canvas(canvasRef.current, {
+        width: LOGICAL,
+        height: LOGICAL,
         backgroundColor: 'transparent',
         preserveObjectStacking: true,
-        selection: true,
         enableRetinaScaling: true,
+        selection: true,
       });
 
-      fabricCanvasRef.current = canvas;
+      fabricRef.current = canvas;
+      (window as any).fabricCanvas = canvas;
 
-      const clipPath = new fabric.Rect({
-        left: printX,
-        top: printY,
-        width: printWidth,
-        height: printHeight,
+      // ClipPath — limita rendering all'area di stampa
+      const clip = new fabric.Rect({
+        ...coords,
         absolutePositioned: true,
       });
-      canvas.clipPath = clipPath;
+      canvas.clipPath = clip;
 
-      const printAreaRect = new fabric.Rect({
-        left: printX,
-        top: printY,
-        width: printWidth,
-        height: printHeight,
+      // Bordo visivo area di stampa
+      const printRect = new fabric.Rect({
+        ...coords,
         fill: 'transparent',
         stroke: '#10b981',
         strokeWidth: 2,
@@ -182,131 +126,154 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
         name: 'printArea',
         opacity: 0.8,
       });
+      canvas.add(printRect);
+      canvas.sendToBack(printRect);
 
-      canvas.add(printAreaRect);
-      canvas.sendToBack(printAreaRect);
-
+      // Stile maniglie touch-friendly
       fabric.Object.prototype.set({
-        cornerSize: 20,
+        cornerSize: 22,
         cornerStyle: 'circle',
         borderColor: '#f97316',
         cornerColor: '#f97316',
-        cornerStrokeColor: '#fff',
+        cornerStrokeColor: '#ffffff',
         transparentCorners: false,
         borderScaleFactor: 2,
         hasRotatingPoint: true,
-        padding: 5,
+        padding: 6,
       });
 
-      const constrainToArea = (obj: fabric.Object) => {
+      // Vincola oggetti all'area di stampa
+      const constrain = (obj: fabric.Object) => {
         if (!obj || (obj as any).name === 'printArea') return;
-
-        const bound = obj.getBoundingRect();
-        let left = obj.left || 0;
-        let top = obj.top || 0;
-
-        const minVisible = 0.3;
-        const minVisibleWidth = bound.width * minVisible;
-        const minVisibleHeight = bound.height * minVisible;
-
-        const maxLeft = printX + printWidth - minVisibleWidth;
-        const maxTop = printY + printHeight - minVisibleHeight;
-        const minLeft = printX - bound.width + minVisibleWidth;
-        const minTop = printY - bound.height + minVisibleHeight;
-
-        if (bound.left < minLeft) left = minLeft + (obj.left! - bound.left);
-        if (bound.top < minTop) top = minTop + (obj.top! - bound.top);
-        if (bound.left > maxLeft) left = maxLeft + (obj.left! - bound.left);
-        if (bound.top > maxTop) top = maxTop + (obj.top! - bound.top);
-
-        obj.set({ left, top });
+        const b = obj.getBoundingRect();
+        let l = obj.left ?? 0;
+        let t = obj.top  ?? 0;
+        const vis = 0.3;
+        const minW = b.width  * vis;
+        const minH = b.height * vis;
+        const { left: px, top: py, width: pw, height: ph } = coords;
+        if (b.left < px - b.width  + minW) l = px - b.width  + minW + (l - b.left);
+        if (b.top  < py - b.height + minH) t = py - b.height + minH + (t - b.top);
+        if (b.left > px + pw - minW)       l = px + pw - minW + (l - b.left);
+        if (b.top  > py + ph - minH)       t = py + ph - minH + (t - b.top);
+        obj.set({ left: l, top: t });
         obj.setCoords();
       };
 
-      canvas.on('object:moving', (e) => constrainToArea(e.target as fabric.Object));
-      canvas.on('object:scaling', (e) => constrainToArea(e.target as fabric.Object));
-      canvas.on('object:rotating', (e) => constrainToArea(e.target as fabric.Object));
+      canvas.on('object:moving',  e => constrain(e.target as fabric.Object));
+      canvas.on('object:scaling', e => constrain(e.target as fabric.Object));
+      canvas.on('object:rotating', e => constrain(e.target as fabric.Object));
 
-      let saveTimeout: NodeJS.Timeout;
-      const debouncedSave = () => {
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => saveCurrentState(canvas), 300);
+      // Salvataggio automatico debounced
+      let saveTimer: NodeJS.Timeout;
+      const save = () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          const objs = canvas.getObjects().filter(o => (o as any).name !== 'printArea');
+          if (objs.length > 0) designStorage[storageKey] = canvas.toJSON(['name']);
+          else delete designStorage[storageKey];
+        }, 300);
       };
+      canvas.on('object:modified', save);
+      canvas.on('object:added', save);
+      canvas.on('object:removed', save);
 
-      canvas.on('object:modified', debouncedSave);
-      canvas.on('object:added', debouncedSave);
-      canvas.on('object:removed', debouncedSave);
+      // Carica design salvato per questo lato
+      const saved = designStorage[storageKey];
+      if (saved) {
+        canvas.loadFromJSON(saved, () => {
+          const pa = canvas.getObjects().find(o => (o as any).name === 'printArea');
+          if (pa) canvas.sendToBack(pa);
+          canvas.requestRenderAll();
+        });
+      }
 
-      loadSavedState(canvas);
-
-      setIsReady(true);
-
+      // Reset
       const handleReset = () => {
         canvas.clear();
-        canvas.clipPath = clipPath;
-        canvas.add(printAreaRect);
-        canvas.sendToBack(printAreaRect);
+        const newClip = new fabric.Rect({ ...coords, absolutePositioned: true });
+        canvas.clipPath = newClip;
+        const newRect = new fabric.Rect({
+          ...coords, fill: 'transparent',
+          stroke: '#10b981', strokeWidth: 2, strokeDashArray: [8, 4],
+          selectable: false, evented: false, name: 'printArea', opacity: 0.8,
+        });
+        canvas.add(newRect);
+        canvas.sendToBack(newRect);
         delete designStorage[storageKey];
         canvas.requestRenderAll();
-        console.log(`🔄 Reset design ${side}`);
       };
       window.addEventListener('resetCanvas', handleReset);
 
+      // Applica subito lo zoom corretto
+      const zoom = displaySize / LOGICAL;
+      canvas.setZoom(zoom);
+      canvas.setWidth(displaySize);
+      canvas.setHeight(displaySize);
+      canvas.requestRenderAll();
+
       return () => {
-        clearTimeout(saveTimeout);
+        clearTimeout(saveTimer);
         window.removeEventListener('resetCanvas', handleReset);
-        saveCurrentState(canvas);
+        save();
         canvas.dispose();
       };
-    };
+    }, 100);
 
-    const timeoutId = setTimeout(initCanvas, 100);
-    return () => clearTimeout(timeoutId);
-  }, [side, printArea, imgLoaded, canvasSize]);
+    return () => clearTimeout(timer);
+  }, [side, printArea, imgLoaded]);
 
+  // ── 4. Aggiorna SOLO lo zoom quando cambia displaySize ────────────────────
+  // NON reinizializza il canvas — scala solo la visualizzazione
+  // Le coordinate logiche rimangono invariate su qualsiasi dispositivo
   useEffect(() => {
-    if (fabricCanvasRef.current && isReady) {
-      (window as any).fabricCanvas = fabricCanvasRef.current;
-    }
-  }, [isReady]);
+    if (!fabricRef.current || displaySize === 0) return;
+    const zoom = displaySize / LOGICAL;
+    fabricRef.current.setZoom(zoom);
+    fabricRef.current.setWidth(displaySize);
+    fabricRef.current.setHeight(displaySize);
+    fabricRef.current.requestRenderAll();
+  }, [displaySize]);
 
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative w-full aspect-square bg-white rounded-xl shadow-lg overflow-hidden border-2 border-gray-100">
+
+        {/* Mockup — sempre 100% del container */}
         <img
           ref={imgRef}
           src={mockupUrl}
           alt={`${productName} ${side}`}
           className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-          style={{ opacity: 0.9 }}
+          style={{ opacity: 0.95 }}
           draggable={false}
-          onLoad={() => setImgLoaded(true)}
+          onLoad={() => {
+            setImgLoaded(false); // force re-init
+            setTimeout(() => setImgLoaded(true), 50);
+          }}
         />
-        
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div 
-            className="relative touch-none"
-            style={{ width: canvasSize, height: canvasSize }}
-          >
-            <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
-          </div>
+
+        {/* Canvas Fabric — dimensione = displaySize, scalato via zoom */}
+        <div className="absolute inset-0 flex items-center justify-center touch-none">
+          <canvas ref={canvasRef} />
         </div>
 
-        <div className="absolute top-4 right-4 bg-gradient-to-r from-orange-600 to-orange-500 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-lg pointer-events-none">
-          {side === 'front' ? '👕 Fronte' : '🔙 Retro'}
+        {/* Badge lato */}
+        <div className="absolute top-3 right-3 bg-gradient-to-r from-orange-600 to-orange-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg pointer-events-none">
+          {side === 'front' ? '👕 Fronte' : '🔄 Retro'}
         </div>
 
+        {/* Dimensioni stampa */}
         {printArea && (
-          <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm px-2 py-1.5 md:px-3 md:py-2 rounded-lg text-xs font-medium text-gray-700 shadow-md pointer-events-none">
+          <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 shadow pointer-events-none">
             File stampa: {printArea.widthCm} × {printArea.heightCm} cm
           </div>
         )}
       </div>
 
-      <p className="text-xs text-gray-500 text-center mt-3">
-        💡 Trascina per spostare • Pizzica per ridimensionare/ruotare • Rimani nell area verde
+      <p className="text-xs text-gray-400 text-center mt-2">
+        💡 Trascina per spostare • Pizzica per ridimensionare/ruotare • Rimani nell'area verde
       </p>
     </div>
   );
 }
-
