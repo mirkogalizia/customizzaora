@@ -288,7 +288,7 @@ export function CanvasEditor({ mockupUrl, side, productName, printArea }: Canvas
             className="relative touch-none"
             style={{ width: canvasSize, height: canvasSize }}
           >
-            "nvas ref={canvasRef} stylee={{ width: '100%', height: '100%', display: 'block' }} />
+            <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
           </div>
         </div>
 
