@@ -1,30 +1,27 @@
-// src/app/layout.tsx — aggiorna questo file aggiungendo CartProvider
+/**
+ * Aggiungi CartProvider e CartDrawer al tuo root layout
+ * src/app/layout.tsx
+ * 
+ * PRIMA:
+ *   export default function RootLayout({ children }) {
+ *     return <html><body>{children}</body></html>
+ *   }
+ * 
+ * DOPO: vedi sotto
+ */
 
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import './globals.css'
-import { Toaster } from 'sonner'
-import { AuthProvider } from '@/contexts/AuthContext'
-import { CartProvider } from '@/contexts/CartContext'
-
-const inter = Inter({ subsets: ['latin'] })
-
-export const metadata: Metadata = {
-  title: 'Print Shop - Personalizza le tue t-shirt',
-  description: 'Crea e personalizza t-shirt e felpe uniche',
-}
+import { CartProvider } from '@/contexts/CartContext';
+import { CartDrawer }   from '@/components/cart/CartDrawer';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="it">
-      <body className={inter.className}>
-        <AuthProvider>
-          <CartProvider>
-            {children}
-          </CartProvider>
-        </AuthProvider>
-        <Toaster position="top-center" richColors />
+      <body>
+        <CartProvider>
+          {children}
+          <CartDrawer />    {/* drawer disponibile su tutto il sito */}
+        </CartProvider>
       </body>
     </html>
-  )
+  );
 }
