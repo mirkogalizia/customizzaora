@@ -152,7 +152,7 @@ function MobileEditorToolbar({ side, onClose, onSideChange, printArea, printArea
   onSideChange: (s: 'front' | 'back') => void;
   printArea?: PrintAreaDimensions;
   printAreaBack?: PrintAreaDimensions;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const [tab, setTab] = useState<'add' | 'edit'>('add');
   const [text, setText] = useState('Il tuo testo');
