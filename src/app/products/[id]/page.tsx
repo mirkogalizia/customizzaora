@@ -43,14 +43,9 @@ export default function ProductDetailPage() {
   const [currentSide, setCurrentSide]       = useState<'front' | 'back'>('front');
   const [quantity, setQuantity]             = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isMobile, setIsMobile]             = useState(false);
 
   // Rileva mobile
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
   }, []);
 
   useEffect(() => { loadProduct(); }, [handle]);
@@ -221,12 +216,9 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {/* Toolbar — solo su desktop, mobile è integrata nel CanvasEditor */}
-            {!isMobile && selectedColor && mockupUrl && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-xl border">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                  🎨 Personalizza — {currentSide === 'front' ? 'Fronte' : 'Retro'}
-                </p>
+            {/* Toolbar — gestisce autonomamente desktop/mobile */}
+            {selectedColor && mockupUrl && (
+              <div className="mt-4">
                 <Toolbar side={currentSide} />
               </div>
             )}
