@@ -6,7 +6,7 @@ import { getShopifyProduct, findVariantId, ShopifyProduct } from '@/lib/shopify/
 import { getProductMockups, ColorMockup, PrintAreas } from '@/lib/firebase/mockups';
 import { Button } from '@/components/ui/button';
 import { CanvasEditor } from '@/components/customizer/CanvasEditor';
-import { Toolbar } from '@/components/customizer/Toolbar';
+import { Configurator } from '@/components/customizer/Configurator';
 import Link from 'next/link';
 import { ArrowLeft, ShoppingCart, Loader2, Check, ChevronDown, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -93,7 +93,7 @@ export default function ProductDetailPage() {
   // ✅ FIX: usa printAreas dallo state, non da product._mockupData
   const currentPrintArea = printAreas?.[currentSide] ?? null;
   const mockupUrl        = currentMockup?.mockupFront ?? null;
-  const mockupUrlBack    = currentMockup?.mockupBack ?? null;
+  const mockupUrlBack    = currentMockup?.mockupBack  ?? null;
   const price = product ? parseFloat(product.priceRange.minVariantPrice.amount) : 0;
 
   function getColorHex(colorName: string): string {
@@ -172,33 +172,32 @@ export default function ProductDetailPage() {
           {/* LEFT — Configuratore */}
           <div className="lg:sticky lg:top-20 lg:self-start">
 
-            {/* Toggle fronte/retro + reset — solo desktop */}
-            <div className="hidden lg:flex gap-2 mb-3">
-              {(['front', 'back'] as const).map(s => (
-                <button key={s} onClick={() => setCurrentSide(s)}
-                  className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                    currentSide === s ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  }`}>
-                  {s === 'front' ? '👕 Fronte' : '🔄 Retro'}
-                </button>
-              ))}
-              <button onClick={() => { if(confirm('Cancellare il design?')) { window.dispatchEvent(new CustomEvent('resetCanvas')); toast.success('Design cancellato'); }}}
-                className="px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 transition-colors">
-                <RotateCcw className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Canvas o placeholder */}
+            {/* Configurator: canvas + toolbar side-by-side (desktop) o stacked (mobile) */}
             {mockupUrl ? (
-              <CanvasEditor
-                mockupUrl={mockupUrl}
-                mockupUrlBack={mockupUrlBack ?? undefined}
-                side={currentSide}
-                onSideChange={setCurrentSide}
-                productName={product.title}
-                printArea={printAreas?.front ?? undefined}
-                printAreaBack={printAreas?.back ?? undefined}
-              />
+              <div className="flex gap-4">
+                {/* Canvas */}
+                <div className="flex-1 min-w-0">
+                  <CanvasEditor
+                    mockupUrl={mockupUrl}
+                    mockupUrlBack={mockupUrlBack ?? undefined}
+                    side={currentSide}
+                    onSideChange={setCurrentSide}
+                    productName={product.title}
+                    printArea={printAreas?.front ?? undefined}
+                    printAreaBack={printAreas?.back ?? undefined}
+                  />
+                </div>
+                {/* Toolbar desktop — nascosta su mobile, Configurator la gestisce da sola */}
+                <div className="hidden md:block">
+                  <Configurator
+                    side={currentSide}
+                    onSideChange={setCurrentSide}
+                    onReset={() => { if(confirm('Cancellare il design?')) { window.dispatchEvent(new CustomEvent('resetCanvas')); toast.success('Design cancellato'); }}}
+                    printArea={printAreas?.front ?? undefined}
+                    printAreaBack={printAreas?.back ?? undefined}
+                  />
+                </div>
+              </div>
             ) : (
               <div className="aspect-square bg-gray-100 rounded-2xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200">
                 {selectedColor && !currentMockup ? (
@@ -217,10 +216,16 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {/* Toolbar — solo desktop, su mobile gestisce l'editor fullscreen */}
-            {selectedColor && mockupUrl && (
-              <div className="hidden lg:block mt-4">
-                <Toolbar side={currentSide} />
+            {/* Configurator mobile — solo su mobile, mostra bottom bar + sheet */}
+            {mockupUrl && (
+              <div className="md:hidden">
+                <Configurator
+                  side={currentSide}
+                  onSideChange={setCurrentSide}
+                  onReset={() => { if(confirm('Cancellare il design?')) { window.dispatchEvent(new CustomEvent('resetCanvas')); toast.success('Design cancellato'); }}}
+                  printArea={printAreas?.front ?? undefined}
+                  printAreaBack={printAreas?.back ?? undefined}
+                />
               </div>
             )}
           </div>
