@@ -92,9 +92,8 @@ export default function ProductDetailPage() {
   const currentMockup   = selectedColor ? mockups[selectedColor] : null;
   // ✅ FIX: usa printAreas dallo state, non da product._mockupData
   const currentPrintArea = printAreas?.[currentSide] ?? null;
-  const mockupUrl        = currentMockup
-    ? (currentSide === 'front' ? currentMockup.mockupFront : currentMockup.mockupBack)
-    : null;
+  const mockupUrl        = currentMockup?.mockupFront ?? null;
+  const mockupUrlBack    = currentMockup?.mockupBack ?? null;
   const price = product ? parseFloat(product.priceRange.minVariantPrice.amount) : 0;
 
   function getColorHex(colorName: string): string {
@@ -173,8 +172,8 @@ export default function ProductDetailPage() {
           {/* LEFT — Configuratore */}
           <div className="lg:sticky lg:top-20 lg:self-start">
 
-            {/* Toggle fronte/retro + reset */}
-            <div className="flex gap-2 mb-3">
+            {/* Toggle fronte/retro + reset — solo desktop */}
+            <div className="hidden lg:flex gap-2 mb-3">
               {(['front', 'back'] as const).map(s => (
                 <button key={s} onClick={() => setCurrentSide(s)}
                   className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
@@ -193,7 +192,9 @@ export default function ProductDetailPage() {
             {mockupUrl ? (
               <CanvasEditor
                 mockupUrl={mockupUrl}
+                mockupUrlBack={mockupUrlBack ?? undefined}
                 side={currentSide}
+                onSideChange={setCurrentSide}
                 productName={product.title}
                 printArea={printAreas?.front ?? undefined}
                 printAreaBack={printAreas?.back ?? undefined}
@@ -216,9 +217,9 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {/* Toolbar — gestisce autonomamente desktop/mobile */}
+            {/* Toolbar — solo desktop, su mobile gestisce l'editor fullscreen */}
             {selectedColor && mockupUrl && (
-              <div className="mt-4">
+              <div className="hidden lg:block mt-4">
                 <Toolbar side={currentSide} />
               </div>
             )}
