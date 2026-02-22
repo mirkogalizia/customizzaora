@@ -200,7 +200,8 @@ export default function ProductDetailPage() {
                 mockupUrl={mockupUrl}
                 side={currentSide}
                 productName={product.title}
-                printArea={currentPrintArea ?? undefined}
+                printArea={printAreas?.front ?? undefined}
+                printAreaBack={printAreas?.back ?? undefined}
               />
             ) : (
               <div className="aspect-square bg-gray-100 rounded-2xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200">
