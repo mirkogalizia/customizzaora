@@ -14,29 +14,37 @@ import { useCart } from '@/contexts/CartContext';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-// Shopify numeric ID per ogni handle — serve per caricare mockup da Firebase
+// Shopify numeric ID per caricare mockup da Firebase
 const HANDLE_TO_SHOPIFY_ID: Record<string, string> = {
   'tshirt-personalizzata-spedizione-24h': '15409340350789',
   'felpa-personalizzata-spedizione-24h': '15598323237189',
   'girocollo-personalizzata-spedizione-24h': '15598448148805',
 };
 
-// Hex approssimativi per gli swatch colore
-const COLOR_HEX: Record<string, string> = {
+// Hex di fallback per swatch — se il mockup ha il colore hex reale lo usiamo invece
+const FALLBACK_HEX: Record<string, string> = {
   'Black': '#111111',
-  'White': '#FFFFFF',
+  'White': '#F5F5F5',
   'Navy': '#1B2A4A',
   'Indigo': '#4B0082',
   'Light Blue': '#ADD8E6',
   'Mint': '#98FFD0',
   'Forest Green': '#228B22',
   'Purple': '#800080',
+  'Red': '#CC0000',
+  'Grey': '#888888',
+  'Gray': '#888888',
+  'Yellow': '#FFD700',
+  'Orange': '#FF6600',
+  'Pink': '#FFB6C1',
+  'Brown': '#8B4513',
+  'Beige': '#F5F5DC',
 };
 
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const handle = params.id as string; // è l'handle Shopify es. "tshirt-personalizzata-spedizione-24h"
+  const handle = params.id as string;
   const { addItem, loading: cartLoading, totalQuantity } = useCart();
 
   const [product, setProduct] = useState<ShopifyProduct | null>(null);
@@ -47,13 +55,11 @@ export default function ProductDetailPage() {
   const [selectedSize, setSelectedSize] = useState<string>('M');
   const [currentSide, setCurrentSide] = useState<'front' | 'back'>('front');
   const [quantity, setQuantity] = useState(1);
-  const [showEditor, setShowEditor] = useState(true);
 
   useEffect(() => { loadProduct(); }, [handle]);
 
   const loadProduct = async () => {
     try {
-      // Carica da Shopify usando l'handle
       const sp = await getShopifyProduct(handle);
       if (!sp) {
         toast.error('Prodotto non trovato');
@@ -63,11 +69,10 @@ export default function ProductDetailPage() {
       setProduct(sp);
 
       // Primo colore disponibile come default
-      const firstColor = sp.variants.edges[0]?.node.selectedOptions
-        .find(o => o.name === 'Color')?.value ?? null;
-      setSelectedColor(firstColor);
+      const colors = getUniqueColors(sp);
+      if (colors.length > 0) setSelectedColor(colors[0]);
 
-      // Carica mockup da Firebase (se già configurati dall'admin)
+      // Carica mockup da Firebase
       const shopifyId = HANDLE_TO_SHOPIFY_ID[handle];
       if (shopifyId) {
         const saved = await getProductMockups(shopifyId);
@@ -81,20 +86,62 @@ export default function ProductDetailPage() {
     }
   };
 
-  // Colori unici dalle varianti Shopify (es. Black, White, Navy...)
-  const uniqueColors = product
-    ? [...new Set(
-        product.variants.edges
-          .map(e => e.node.selectedOptions.find(o => o.name === 'Color')?.value)
-          .filter((c): c is string => Boolean(c))
-      )]
-    : [];
+  // Estrae colori unici mantenendo l'ordine di Shopify
+  function getUniqueColors(sp: ShopifyProduct): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const { node } of sp.variants.edges) {
+      const colorOpt = node.selectedOptions.find(o => o.name === 'Color');
+      if (colorOpt && !seen.has(colorOpt.value)) {
+        seen.add(colorOpt.value);
+        result.push(colorOpt.value);
+      }
+    }
+    return result;
+  }
 
+  // Taglie disponibili per il colore selezionato
+  function getAvailableSizes(sp: ShopifyProduct, color: string): string[] {
+    return sp.variants.edges
+      .filter(({ node }) => {
+        const colorOpt = node.selectedOptions.find(o => o.name === 'Color');
+        return colorOpt?.value === color && node.availableForSale;
+      })
+      .map(({ node }) => node.selectedOptions.find(o => o.name === 'Size')?.value ?? '')
+      .filter(Boolean);
+  }
+
+  const uniqueColors = product ? getUniqueColors(product) : [];
+  const availableSizes = product && selectedColor ? getAvailableSizes(product, selectedColor) : [];
+
+  // Mockup del colore selezionato
   const currentMockup = selectedColor ? mockups[selectedColor] : null;
   const mockupUrl = currentMockup
     ? (currentSide === 'front' ? currentMockup.mockupFront : currentMockup.mockupBack)
     : null;
+
   const price = product ? parseFloat(product.priceRange.minVariantPrice.amount) : 0;
+
+  // Colore hex: usa quello salvato nel mockup Firebase, altrimenti fallback
+  function getColorHex(colorName: string): string {
+    const fromMockup = mockups[colorName]?.colorHex;
+    if (fromMockup && fromMockup !== '#000000') return fromMockup;
+    // Cerca case-insensitive nel fallback
+    const key = Object.keys(FALLBACK_HEX).find(k => k.toLowerCase() === colorName.toLowerCase());
+    return key ? FALLBACK_HEX[key] : '#CCCCCC';
+  }
+
+  const handleColorChange = (color: string) => {
+    setSelectedColor(color);
+    setCurrentSide('front'); // reset al fronte quando cambia colore
+    // Se la taglia corrente non è disponibile per il nuovo colore, seleziona la prima disponibile
+    if (product) {
+      const sizes = getAvailableSizes(product, color);
+      if (sizes.length > 0 && !sizes.includes(selectedSize)) {
+        setSelectedSize(sizes[0]);
+      }
+    }
+  };
 
   const handleResetDesign = () => {
     if (confirm('Vuoi cancellare tutto il design?')) {
@@ -121,7 +168,7 @@ export default function ProductDetailPage() {
 
       const attributes: { key: string; value: string }[] = [
         { key: 'colore', value: selectedColor },
-        { key: 'colore_hex', value: COLOR_HEX[selectedColor] ?? '#000000' },
+        { key: 'colore_hex', value: getColorHex(selectedColor) },
         { key: 'taglia', value: selectedSize },
         { key: 'handle', value: handle },
       ];
@@ -173,8 +220,9 @@ export default function ProductDetailPage() {
       <div className="max-w-7xl mx-auto px-4 py-6 lg:py-10">
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12">
 
-          {/* LEFT — Canvas editor */}
+          {/* LEFT — Canvas */}
           <div className="lg:sticky lg:top-6 lg:self-start">
+            {/* Toggle fronte/retro */}
             <div className="flex gap-2 mb-4">
               {(['front', 'back'] as const).map(side => (
                 <button
@@ -184,18 +232,19 @@ export default function ProductDetailPage() {
                     currentSide === side ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
                   }`}
                 >
-                  {side === 'front' ? 'Fronte' : 'Retro'}
+                  {side === 'front' ? '👕 Fronte' : '🔄 Retro'}
                 </button>
               ))}
               <button
                 onClick={handleResetDesign}
                 className="px-4 py-2.5 text-sm font-medium rounded-md bg-red-50 hover:bg-red-100 text-red-700 transition-colors"
-                title="Reset design"
+                title="Cancella design"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Canvas o placeholder */}
             {mockupUrl ? (
               <CanvasEditor
                 mockupUrl={mockupUrl}
@@ -204,138 +253,176 @@ export default function ProductDetailPage() {
                 printArea={currentMockup?.printArea}
               />
             ) : (
-              <div className="aspect-square bg-gray-100 rounded-lg flex flex-col items-center justify-center gap-2 text-center p-8">
+              <div className="aspect-square bg-gray-100 rounded-xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-300">
                 {selectedColor && !currentMockup ? (
                   <>
-                    <p className="text-gray-500 font-medium">Mockup non ancora configurato</p>
-                    <p className="text-sm text-gray-400">Vai su <code className="bg-gray-200 px-1 rounded">/admin/mockups</code> per caricare le immagini</p>
+                    <div
+                      className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
+                      style={{ backgroundColor: getColorHex(selectedColor) }}
+                    />
+                    <p className="font-medium text-gray-700">{selectedColor}</p>
+                    <p className="text-sm text-gray-400 text-center px-8">
+                      Mockup non ancora caricato.<br />
+                      Vai su <code className="bg-gray-200 px-1 rounded text-xs">/admin/mockups</code> per configurarlo.
+                    </p>
                   </>
                 ) : (
                   <p className="text-gray-400">Seleziona un colore per iniziare</p>
                 )}
               </div>
             )}
+
+            {/* Toolbar editor — sotto il canvas */}
+            {selectedColor && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-xl border">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  🎨 Personalizza il design — {currentSide === 'front' ? 'Fronte' : 'Retro'}
+                </p>
+                <Toolbar side={currentSide} />
+              </div>
+            )}
           </div>
 
-          {/* RIGHT — Info + configurazione */}
-          <div className="space-y-6">
+          {/* RIGHT — Info prodotto */}
+          <div className="space-y-7">
+            {/* Titolo e prezzo */}
             <div>
-              <h1 className="text-3xl font-bold mb-2">{product.title}</h1>
-              <div className="text-2xl font-semibold">
-                €{(price * quantity).toFixed(2)}
+              <h1 className="text-3xl font-bold mb-3">{product.title}</h1>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-orange-600">
+                  €{(price * quantity).toFixed(2)}
+                </span>
+                {quantity > 1 && (
+                  <span className="text-sm text-gray-500">(€{price.toFixed(2)} cad.)</span>
+                )}
               </div>
               <p className="text-sm text-gray-500 mt-1">IVA inclusa • Spedizione gratuita sopra €50</p>
             </div>
 
             {product.description && (
-              <p className="text-gray-700 leading-relaxed">{product.description}</p>
+              <p className="text-gray-600 leading-relaxed">{product.description}</p>
             )}
 
-            {/* Selezione colore */}
+            {/* Selezione COLORE */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium">Colore</span>
-                {selectedColor && <span className="text-sm text-gray-600">{selectedColor}</span>}
+                <span className="font-semibold">Colore</span>
+                {selectedColor && (
+                  <span className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+                    {selectedColor}
+                  </span>
+                )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {uniqueColors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setSelectedColor(color)}
-                    className={`w-12 h-12 rounded-full border-2 transition-all flex items-center justify-center ${
-                      selectedColor === color ? 'border-gray-900 scale-110' : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                    style={{ backgroundColor: COLOR_HEX[color] ?? '#ccc' }}
-                    title={color}
-                  >
-                    {selectedColor === color && (
-                      <Check className={`w-5 h-5 drop-shadow ${color === 'White' ? 'text-gray-800' : 'text-white'}`} />
-                    )}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-3">
+                {uniqueColors.map((color) => {
+                  const hex = getColorHex(color);
+                  const isLight = hex === '#F5F5F5' || hex === '#F5F5DC' || hex === '#FFD700' || hex === '#ADD8E6' || hex === '#98FFD0' || hex === '#FFB6C1';
+                  const hasMockup = !!mockups[color];
+                  return (
+                    <button
+                      key={color}
+                      onClick={() => handleColorChange(color)}
+                      title={color}
+                      className={`relative w-11 h-11 rounded-full transition-all duration-200 flex items-center justify-center ${
+                        selectedColor === color
+                          ? 'ring-2 ring-offset-2 ring-gray-900 scale-110'
+                          : 'ring-1 ring-gray-300 hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: hex }}
+                    >
+                      {selectedColor === color && (
+                        <Check className={`w-4 h-4 drop-shadow ${isLight ? 'text-gray-800' : 'text-white'}`} />
+                      )}
+                      {/* Pallino verde se mockup configurato */}
+                      {hasMockup && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
+              <p className="text-xs text-gray-400 mt-2">
+                🟢 = mockup configurato &nbsp;|&nbsp; {Object.keys(mockups).length}/{uniqueColors.length} colori pronti
+              </p>
             </div>
 
-            {/* Selezione taglia */}
+            {/* Selezione TAGLIA */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium">Taglia</span>
-                <button className="text-sm text-gray-600 underline">Guida taglie</button>
+                <span className="font-semibold">Taglia</span>
+                <button className="text-sm text-gray-500 underline">Guida taglie</button>
               </div>
               <div className="grid grid-cols-6 gap-2">
-                {SIZES.map((size) => (
-                  <button
-                    key={size}
-                    onClick={() => setSelectedSize(size)}
-                    className={`py-3 text-sm font-medium rounded-md border-2 transition-all ${
-                      selectedSize === size
-                        ? 'border-gray-900 bg-gray-900 text-white'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    {size}
-                  </button>
-                ))}
+                {SIZES.map((size) => {
+                  const isAvailable = availableSizes.includes(size);
+                  return (
+                    <button
+                      key={size}
+                      onClick={() => isAvailable && setSelectedSize(size)}
+                      disabled={!isAvailable}
+                      className={`py-3 text-sm font-medium rounded-md border-2 transition-all ${
+                        selectedSize === size
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : isAvailable
+                          ? 'border-gray-300 hover:border-gray-500'
+                          : 'border-gray-200 text-gray-300 cursor-not-allowed line-through'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Toolbar personalizzazione */}
+            {/* QUANTITÀ */}
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium">🎨 Personalizza il tuo design</span>
-                <button onClick={() => setShowEditor(!showEditor)} className="text-sm text-gray-600 underline">
-                  {showEditor ? 'Nascondi' : 'Mostra'}
-                </button>
-              </div>
-              {showEditor && selectedColor && (
-                <div className="p-4 bg-gray-50 rounded-lg border">
-                  <Toolbar side={currentSide} />
-                </div>
-              )}
-            </div>
-
-            {/* Quantità */}
-            <div>
-              <span className="text-sm font-medium mb-3 block">Quantità</span>
+              <span className="font-semibold mb-3 block">Quantità</span>
               <div className="flex items-center gap-4">
-                <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold text-lg">−</button>
-                <span className="text-lg font-medium w-8 text-center">{quantity}</span>
-                <button onClick={() => setQuantity(Math.min(99, quantity + 1))} className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold text-lg">+</button>
+                <button
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold text-lg"
+                >−</button>
+                <span className="text-lg font-semibold w-8 text-center">{quantity}</span>
+                <button
+                  onClick={() => setQuantity(Math.min(99, quantity + 1))}
+                  className="w-10 h-10 border-2 border-gray-300 rounded-md hover:bg-gray-50 font-bold text-lg"
+                >+</button>
               </div>
             </div>
 
+            {/* CTA */}
             <Button
               onClick={handleAddToCart}
               size="lg"
-              className="w-full h-12 text-base font-medium"
-              disabled={!selectedColor || cartLoading}
+              className="w-full h-14 text-base font-semibold bg-orange-600 hover:bg-orange-700"
+              disabled={!selectedColor || cartLoading || availableSizes.length === 0}
             >
               {cartLoading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Aggiunta...</>
-                : `Aggiungi al carrello • €${(price * quantity).toFixed(2)}`
+                : `🛒 Aggiungi al carrello — €${(price * quantity).toFixed(2)}`
               }
             </Button>
 
             {/* Features */}
-            <div className="border-t pt-6 space-y-3">
+            <div className="border-t pt-5 space-y-2.5">
               {[
-                'Spedizione gratuita sopra €50',
-                'Reso gratuito entro 30 giorni',
-                'Stampa HD di alta qualità',
-                'Tessuto 100% cotone premium',
+                '⚡ Spedizione in 24 ore',
+                '↩️ Reso gratuito entro 30 giorni',
+                '🖨️ Stampa HD di alta qualità',
+                '🌿 Tessuto 100% cotone premium',
               ].map(f => (
-                <div key={f} className="flex items-center gap-3 text-sm">
-                  <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <div key={f} className="flex items-center gap-2 text-sm text-gray-600">
                   <span>{f}</span>
                 </div>
               ))}
             </div>
 
-            <details className="border-t pt-6">
-              <summary className="cursor-pointer font-medium flex items-center justify-between">
+            <details className="border-t pt-5">
+              <summary className="cursor-pointer font-semibold flex items-center justify-between">
                 Dettagli prodotto <ChevronDown className="w-5 h-5" />
               </summary>
-              <div className="mt-4 text-sm text-gray-600 space-y-2">
+              <div className="mt-4 text-sm text-gray-600 space-y-1.5">
                 <p>• Materiale: 100% cotone biologico</p>
                 <p>• Grammatura: 180 g/m²</p>
                 <p>• Stampa: DTG (Direct to Garment)</p>
