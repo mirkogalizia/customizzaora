@@ -1,25 +1,29 @@
-/**
- * Aggiungi CartProvider e CartDrawer al tuo root layout
- * src/app/layout.tsx
- * 
- * PRIMA:
- *   export default function RootLayout({ children }) {
- *     return <html><body>{children}</body></html>
- *   }
- * 
- * DOPO: vedi sotto
- */
-
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { Toaster } from 'sonner';
 import { CartProvider } from '@/contexts/CartContext';
-import { CartDrawer }   from '@/components/cart/CartDrawer';
+import { CartDrawer } from '@/components/cart/CartDrawer';
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: 'Print Shop — T-shirt personalizzate',
+  description: 'Personalizza la tua t-shirt, felpa o girocollo. Spedizione in 24 ore.',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="it">
-      <body>
+      <body className={inter.className}>
         <CartProvider>
           {children}
-          <CartDrawer />    {/* drawer disponibile su tutto il sito */}
+          <CartDrawer />
+          <Toaster position="top-center" richColors />
         </CartProvider>
       </body>
     </html>
